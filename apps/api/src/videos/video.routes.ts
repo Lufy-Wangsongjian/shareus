@@ -16,19 +16,37 @@ export async function registerVideoRoutes(
 ): Promise<void> {
   const videos = createVideoService(repo);
 
-  async function requireAdmin(request: { headers: Record<string, unknown> }) {
+  async function requireAdmin(request: { headers: Record<string, unknown> }): Promise<boolean> {
     const header = String(request.headers.authorization ?? "");
     const token = header.replace(/^Bearer\s+/i, "");
-    await verifyAdminToken({ token, secret: config.adminTokenSecret });
+    try {
+      await verifyAdminToken({ token, secret: config.adminTokenSecret });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
-  server.get("/api/videos", async () => videos.listVideos());
+  server.get("/api/videos", async (request, reply) => {
+    if (!(await requireAdmin(request))) {
+      return reply.code(401).send({ message: "Admin authorization is required" });
+    }
+
+    return videos.listVideos();
+  });
 
   server.post("/api/videos/import", async (request, reply) => {
-    await requireAdmin(request);
-    const body = importVideoSchema.parse(request.body);
+    if (!(await requireAdmin(request))) {
+      return reply.code(401).send({ message: "Admin authorization is required" });
+    }
+
+    const parsed = importVideoSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ message: "Video title and source object path are required" });
+    }
+
     try {
-      return await videos.importVideo(body);
+      return await videos.importVideo(parsed.data);
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Video import failed" });
     }
