@@ -20,7 +20,12 @@ export async function createAdminToken(input: CreateAdminTokenInput): Promise<st
 }
 
 export async function verifyAdminToken(input: { token: string; secret: string }): Promise<{ role: "admin" }> {
-  const [encodedPayload, signature] = input.token.split(".");
+  const parts = input.token.split(".");
+  if (parts.length !== 2) {
+    throw new Error("Invalid token");
+  }
+
+  const [encodedPayload, signature] = parts;
   if (!encodedPayload || !signature) {
     throw new Error("Invalid token");
   }
@@ -30,14 +35,25 @@ export async function verifyAdminToken(input: { token: string; secret: string })
     .update(encodedPayload)
     .digest("base64url");
 
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+  const signatureBuffer = Buffer.from(signature);
+  const expectedSignatureBuffer = Buffer.from(expectedSignature);
+
+  if (
+    signatureBuffer.length !== expectedSignatureBuffer.length ||
+    !crypto.timingSafeEqual(signatureBuffer, expectedSignatureBuffer)
+  ) {
     throw new Error("Invalid token");
   }
 
-  const payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as {
-    role: string;
-    exp: number;
-  };
+  let payload: { role: string; exp: number };
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, "base64url").toString("utf8")) as {
+      role: string;
+      exp: number;
+    };
+  } catch {
+    throw new Error("Invalid token");
+  }
 
   if (payload.role !== "admin" || payload.exp < Math.floor(Date.now() / 1000)) {
     throw new Error("Invalid token");

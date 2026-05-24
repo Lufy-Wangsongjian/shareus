@@ -8,17 +8,33 @@ const loginSchema = z.object({
 });
 
 export async function registerAuthRoutes(server: FastifyInstance, config: AppConfig): Promise<void> {
-  server.post("/api/auth/admin-login", async (request, reply) => {
-    const body = loginSchema.parse(request.body);
-    if (body.password !== config.adminPassword) {
-      return reply.code(401).send({ message: "Invalid admin password" });
+  server.post(
+    "/api/auth/admin-login",
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      const parsed = loginSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ message: "Password is required" });
+      }
+
+      const body = parsed.data;
+      if (body.password !== config.adminPassword) {
+        return reply.code(401).send({ message: "Invalid admin password" });
+      }
+
+      const token = await createAdminToken({
+        secret: config.adminTokenSecret,
+        ttlSec: 60 * 60 * 8
+      });
+
+      return { token };
     }
-
-    const token = await createAdminToken({
-      secret: config.adminTokenSecret,
-      ttlSec: 60 * 60 * 8
-    });
-
-    return { token };
-  });
+  );
 }

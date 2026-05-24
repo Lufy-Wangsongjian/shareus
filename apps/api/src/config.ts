@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export const appConfigSchema = z.object({
   adminPassword: z.string().min(8),
-  adminTokenSecret: z.string().min(8),
-  roomTokenSecret: z.string().min(8),
+  adminTokenSecret: z.string().min(32),
+  roomTokenSecret: z.string().min(32),
   gcpProjectId: z.string().min(1),
   gcsBucket: z.string().min(1),
   transcoderJobName: z.string().min(1),
