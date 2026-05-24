@@ -1,0 +1,20 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: shareus-watch-party
+spec:
+  template:
+    spec:
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT/shareus/app:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: GCP_PROJECT_ID
+              value: PROJECT
+            - name: GCS_BUCKET
+              value: BUCKET
+            - name: TRANSCODER_JOB_NAME
+              value: shareus-transcoder
+            - name: TRANSCODER_REGION
+              value: REGION

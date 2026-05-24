@@ -51,4 +51,22 @@ export async function registerVideoRoutes(
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Video import failed" });
     }
   });
+
+  server.delete<{ Params: { videoId: string } }>("/api/videos/:videoId", async (request, reply) => {
+    if (!(await requireAdmin(request))) {
+      return reply.code(401).send({ message: "Admin authorization is required" });
+    }
+
+    if (!repo.getVideo) {
+      return reply.code(404).send({ message: "Video not found" });
+    }
+
+    const video = await repo.getVideo(request.params.videoId);
+    if (!video) {
+      return reply.code(404).send({ message: "Video not found" });
+    }
+
+    await videos.deleteVideo(video);
+    return { ok: true };
+  });
 }

@@ -1,0 +1,13 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: shareus-transcoder
+spec:
+  template:
+    spec:
+      template:
+        spec:
+          containers:
+            - image: REGION-docker.pkg.dev/PROJECT/shareus/transcoder:latest
+          maxRetries: 1
+          timeoutSeconds: 7200

@@ -5,6 +5,7 @@ export interface VideoRepository {
   objectExists: (objectPath: string) => Promise<boolean>;
   saveVideo: (video: VideoRecord) => Promise<VideoRecord>;
   listVideos: () => Promise<VideoRecord[]>;
+  getVideo?: (videoId: string) => Promise<VideoRecord | null>;
   deleteVideo: (videoId: string) => Promise<void>;
   deletePrefix: (prefix: string) => Promise<void>;
 }
