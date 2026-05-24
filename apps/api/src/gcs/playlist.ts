@@ -33,7 +33,7 @@ async function rewriteUriAttribute(line: string, input: RewritePlaylistInput): P
   }
 
   const uri = uriMatch[1];
-  if (/^https?:\/\//.test(uri)) {
+  if (hasUriScheme(uri) || uri.startsWith("//")) {
     return line;
   }
 
@@ -42,15 +42,25 @@ async function rewriteUriAttribute(line: string, input: RewritePlaylistInput): P
 }
 
 function toSegmentObjectPath(hlsPrefix: string, segmentPath: string): string {
-  if (segmentPath.startsWith("/") || segmentPath.includes("..")) {
+  if (segmentPath.startsWith("/") || hasUriScheme(segmentPath) || segmentPath.startsWith("//")) {
     throw new Error("Invalid HLS segment path");
   }
 
   const cleanPrefix = hlsPrefix.replace(/\/$/, "");
   const cleanSegment = segmentPath.replace(/^\.\//, "");
-  if (!cleanSegment || cleanSegment.startsWith("/") || cleanSegment.includes("..")) {
+  const pathSegments = cleanSegment.split("/");
+
+  if (
+    !cleanSegment ||
+    cleanSegment.startsWith("/") ||
+    pathSegments.some((segment) => segment === "." || segment === ".." || segment === "")
+  ) {
     throw new Error("Invalid HLS segment path");
   }
 
   return `${cleanPrefix}/${cleanSegment}`;
+}
+
+function hasUriScheme(uri: string): boolean {
+  return /^[a-z][a-z0-9+.-]*:/i.test(uri);
 }

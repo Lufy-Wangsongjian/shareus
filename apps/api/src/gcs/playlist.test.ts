@@ -16,7 +16,7 @@ describe("rewritePlaylistWithSignedSegments", () => {
   });
 
   it("rejects segment paths that would escape the HLS prefix", async () => {
-    const playlist = "#EXTM3U\n#EXTINF:4.0,\n../secret.ts\n";
+    const playlist = "#EXTM3U\n#EXTINF:4.0,\nnested/../secret.ts\n";
 
     await expect(rewritePlaylistWithSignedSegments({
       playlist,
@@ -34,5 +34,18 @@ describe("rewritePlaylistWithSignedSegments", () => {
     });
 
     expect(rewritten).toContain("#EXT-X-MAP:URI=\"https://signed.example/videos/vid_1/hls/init.mp4\"");
+  });
+
+  it("preserves absolute scheme URI attributes", async () => {
+    const playlist = "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key-id\"\n#EXT-X-KEY:METHOD=AES-128,URI=\"data:text/plain;base64,abc\"\n#EXTINF:4.0,\nsegment..v1.ts\n";
+    const rewritten = await rewritePlaylistWithSignedSegments({
+      playlist,
+      hlsPrefix: "videos/vid_1/hls",
+      signSegment: async (objectPath) => `https://signed.example/${objectPath}`
+    });
+
+    expect(rewritten).toContain("URI=\"skd://key-id\"");
+    expect(rewritten).toContain("URI=\"data:text/plain;base64,abc\"");
+    expect(rewritten).toContain("https://signed.example/videos/vid_1/hls/segment..v1.ts");
   });
 });
