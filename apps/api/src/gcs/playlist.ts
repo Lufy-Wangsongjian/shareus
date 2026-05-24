@@ -16,7 +16,7 @@ export async function rewritePlaylistWithSignedSegments(input: RewritePlaylistIn
       return rewriteUriAttribute(line, input);
     }
 
-    if (/^https?:\/\//.test(trimmed)) {
+    if (hasUriScheme(trimmed) || trimmed.startsWith("//")) {
       return line;
     }
 
@@ -53,12 +53,13 @@ function toSegmentObjectPath(hlsPrefix: string, segmentPath: string): string {
   if (
     !cleanSegment ||
     cleanSegment.startsWith("/") ||
-    pathSegments.some((segment) => segment === "." || segment === ".." || segment === "")
+    pathSegments.some((segment) => segment === ".." || segment === "")
   ) {
     throw new Error("Invalid HLS segment path");
   }
 
-  return `${cleanPrefix}/${cleanSegment}`;
+  const normalizedSegment = pathSegments.filter((segment) => segment !== ".").join("/");
+  return `${cleanPrefix}/${normalizedSegment}`;
 }
 
 function hasUriScheme(uri: string): boolean {

@@ -48,4 +48,17 @@ describe("rewritePlaylistWithSignedSegments", () => {
     expect(rewritten).toContain("URI=\"data:text/plain;base64,abc\"");
     expect(rewritten).toContain("https://signed.example/videos/vid_1/hls/segment..v1.ts");
   });
+
+  it("preserves absolute media URI lines and signs normalized relative paths", async () => {
+    const playlist = "#EXTM3U\nipfs://example/seg.ts\n//cdn.example.com/seg.ts\nnested/./seg.ts\n";
+    const rewritten = await rewritePlaylistWithSignedSegments({
+      playlist,
+      hlsPrefix: "videos/vid_1/hls",
+      signSegment: async (objectPath) => `https://signed.example/${objectPath}`
+    });
+
+    expect(rewritten).toContain("ipfs://example/seg.ts");
+    expect(rewritten).toContain("//cdn.example.com/seg.ts");
+    expect(rewritten).toContain("https://signed.example/videos/vid_1/hls/nested/seg.ts");
+  });
 });
