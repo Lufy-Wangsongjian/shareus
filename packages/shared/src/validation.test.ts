@@ -11,6 +11,10 @@ describe("parseUploadObjectPath", () => {
       objectPath: "uploads/folder/movie.mkv",
       extension: "mkv"
     });
+    expect(parseUploadObjectPath("uploads/movie.mov")).toEqual({
+      objectPath: "uploads/movie.mov",
+      extension: "mov"
+    });
   });
 
   it("rejects objects outside uploads", () => {
