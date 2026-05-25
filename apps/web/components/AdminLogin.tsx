@@ -23,6 +23,8 @@ export function AdminLogin({ onToken }: { onToken: (token: string) => void }) {
       <input
         className="mt-6 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
         type="password"
+        name="shareus-admin-password"
+        autoComplete="current-password"
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         placeholder="管理员密码"

@@ -1,4 +1,5 @@
 import { Firestore } from "@google-cloud/firestore";
+import type { ChatMessageRecord } from "./rooms/chat.model.js";
 import type { RoomRecord } from "./rooms/room.model.js";
 import type { VideoRecord } from "./videos/video.model.js";
 
@@ -45,6 +46,25 @@ export function createFirestoreAdapter() {
       return snap.docs
         .map((doc) => doc.data() as RoomRecord)
         .filter((room) => room.status === "open");
+    },
+    async saveChatMessage(message: ChatMessageRecord): Promise<ChatMessageRecord> {
+      await db
+        .collection("rooms")
+        .doc(message.roomId)
+        .collection("messages")
+        .doc(message.id)
+        .set(message);
+      return message;
+    },
+    async listChatMessages(roomId: string, limit = 200): Promise<ChatMessageRecord[]> {
+      const snap = await db
+        .collection("rooms")
+        .doc(roomId)
+        .collection("messages")
+        .orderBy("sentAt", "asc")
+        .limit(limit)
+        .get();
+      return snap.docs.map((doc) => doc.data() as ChatMessageRecord);
     }
   };
 }

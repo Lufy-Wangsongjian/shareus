@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { calculateExpectedPosition, shouldCorrectDrift } from "./playback.js";
+import {
+  calculateExpectedPosition,
+  calculatePlaybackRate,
+  shouldCorrectDrift,
+  shouldSoftSync,
+  SYNC_HARD_SEEK_THRESHOLD_SEC
+} from "./playback.js";
 
 describe("calculateExpectedPosition", () => {
   it("keeps paused position fixed", () => {
@@ -22,23 +28,39 @@ describe("calculateExpectedPosition", () => {
 });
 
 describe("shouldCorrectDrift", () => {
-  it("ignores tiny drift", () => {
-    expect(shouldCorrectDrift({ localPositionSec: 10, expectedPositionSec: 10.25 })).toBe(false);
+  it("ignores drift within 10 seconds", () => {
+    expect(shouldCorrectDrift({ localPositionSec: 10, expectedPositionSec: 19.5 })).toBe(false);
   });
 
-  it("corrects large drift", () => {
-    expect(shouldCorrectDrift({ localPositionSec: 10, expectedPositionSec: 12.1 })).toBe(true);
+  it("corrects drift above 10 seconds", () => {
+    expect(shouldCorrectDrift({ localPositionSec: 10, expectedPositionSec: 20.5 })).toBe(true);
+  });
+});
+
+describe("shouldSoftSync", () => {
+  it("soft syncs mid-range drift", () => {
+    expect(shouldSoftSync(10, 14)).toBe(true);
   });
 
-  it("does not correct drift at the default threshold boundary", () => {
-    expect(shouldCorrectDrift({ localPositionSec: 10, expectedPositionSec: 10.75 })).toBe(false);
+  it("skips tiny drift", () => {
+    expect(shouldSoftSync(10, 10.2)).toBe(false);
   });
 
-  it("uses a custom threshold when provided", () => {
-    expect(shouldCorrectDrift({
-      localPositionSec: 10,
-      expectedPositionSec: 10.5,
-      thresholdSec: 0.25
-    })).toBe(true);
+  it("skips drift above hard threshold", () => {
+    expect(shouldSoftSync(10, 10 + SYNC_HARD_SEEK_THRESHOLD_SEC + 1)).toBe(false);
+  });
+});
+
+describe("calculatePlaybackRate", () => {
+  it("returns 1 when aligned", () => {
+    expect(calculatePlaybackRate(10, 10.1)).toBe(1);
+  });
+
+  it("speeds up when behind", () => {
+    expect(calculatePlaybackRate(10, 13)).toBeGreaterThan(1);
+  });
+
+  it("slows down when ahead", () => {
+    expect(calculatePlaybackRate(13, 10)).toBeLessThan(1);
   });
 });

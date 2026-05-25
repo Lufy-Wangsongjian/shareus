@@ -10,3 +10,7 @@ export function createVideoId(): string {
 export function createRoomId(): string {
   return `room_${makeId()}`;
 }
+
+export function createChatMessageId(): string {
+  return `msg_${makeId()}`;
+}

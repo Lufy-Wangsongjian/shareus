@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { rewritePlaylistWithSignedSegments } from "./playlist.js";
+import { rewritePlaylistWithProxySegments, rewritePlaylistWithSignedSegments } from "./playlist.js";
+
+describe("rewritePlaylistWithProxySegments", () => {
+  it("rewrites relative segment paths to room proxy paths", () => {
+    const playlist = "#EXTM3U\n#EXTINF:4.0,\nsegment-00000.ts\n#EXT-X-MAP:URI=\"init.mp4\"\n";
+    const rewritten = rewritePlaylistWithProxySegments(playlist);
+
+    expect(rewritten).toContain("hls/segment-00000.ts");
+    expect(rewritten).toContain("#EXT-X-MAP:URI=\"hls/init.mp4\"");
+  });
+
+  it("rejects unsafe segment paths", () => {
+    const playlist = "#EXTM3U\n#EXTINF:4.0,\n../secret.ts\n";
+    expect(() => rewritePlaylistWithProxySegments(playlist)).toThrow("Invalid HLS segment path");
+  });
+});
 
 describe("rewritePlaylistWithSignedSegments", () => {
   it("rewrites relative segment paths to signed URLs", async () => {

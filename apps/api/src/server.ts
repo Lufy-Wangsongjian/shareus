@@ -59,7 +59,10 @@ export function createProductionDeps(config: AppConfig): ServerDeps {
     roomPlayback: {
       getVideo: firestore.getVideo,
       readText: storage.readText,
-      signReadUrl: storage.signReadUrl
+      signReadUrl: storage.signReadUrl,
+      getObjectSize: storage.getObjectSize,
+      openReadStream: storage.openReadStream,
+      writeBuffer: storage.writeBuffer
     },
     transcodeGateway: {
       startJob: createCloudRunJobStarter(config),

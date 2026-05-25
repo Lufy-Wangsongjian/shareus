@@ -9,5 +9,9 @@ spec:
         spec:
           containers:
             - image: REGION-docker.pkg.dev/PROJECT/shareus/transcoder:latest
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 16Gi
           maxRetries: 1
-          timeoutSeconds: 7200
+          timeoutSeconds: 86400

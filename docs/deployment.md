@@ -55,6 +55,22 @@ gcloud run deploy shareus-web \
   --region=$REGION --project=$PROJECT
 ```
 
+## 转码 Job
+
+大文件（>5GB）建议 **16Gi 内存**：
+
+```bash
+gcloud run jobs update shareus-transcoder \
+  --region=$REGION --project=$PROJECT \
+  --memory=16Gi --cpu=4 --task-timeout=86400s --max-retries=1
+```
+
+查看转码进度：
+
+```bash
+gcloud run jobs executions list --job=shareus-transcoder --region=$REGION --project=$PROJECT
+```
+
 ## Secrets
 
 生产环境建议把以下变量迁到 Secret Manager，而不是明文写在 Cloud Run 环境变量里：

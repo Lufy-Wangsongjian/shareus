@@ -1,3 +1,6 @@
+export const SYNC_HARD_SEEK_THRESHOLD_SEC = 10;
+export const SYNC_SOFT_MIN_DRIFT_SEC = 0.5;
+
 export interface CalculateExpectedPositionInput {
   isPlaying: boolean;
   positionSec: number;
@@ -21,6 +24,24 @@ export interface ShouldCorrectDriftInput {
 }
 
 export function shouldCorrectDrift(input: ShouldCorrectDriftInput): boolean {
-  const thresholdSec = input.thresholdSec ?? 0.75;
+  const thresholdSec = input.thresholdSec ?? SYNC_HARD_SEEK_THRESHOLD_SEC;
   return Math.abs(input.localPositionSec - input.expectedPositionSec) > thresholdSec;
+}
+
+export function shouldSoftSync(localPositionSec: number, expectedPositionSec: number): boolean {
+  const drift = Math.abs(expectedPositionSec - localPositionSec);
+  return drift > SYNC_SOFT_MIN_DRIFT_SEC && drift <= SYNC_HARD_SEEK_THRESHOLD_SEC;
+}
+
+export function calculatePlaybackRate(localPositionSec: number, expectedPositionSec: number): number {
+  const drift = expectedPositionSec - localPositionSec;
+  if (Math.abs(drift) <= SYNC_SOFT_MIN_DRIFT_SEC) {
+    return 1;
+  }
+  if (Math.abs(drift) > SYNC_HARD_SEEK_THRESHOLD_SEC) {
+    return 1;
+  }
+
+  const rate = 1 + drift / 15;
+  return Math.min(1.5, Math.max(0.75, rate));
 }

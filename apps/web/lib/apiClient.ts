@@ -70,7 +70,17 @@ export async function joinRoom(roomId: string, password: string) {
     body: JSON.stringify({ password })
   });
   if (!response.ok) throw new Error("Failed to join room");
-  return response.json();
+  return response.json() as Promise<{
+    roomId: string;
+    videoId: string;
+    playbackState: {
+      videoId: string;
+      isPlaying: boolean;
+      positionSec: number;
+      updatedAt: string;
+      updatedBy: string;
+    } | null;
+  }>;
 }
 
 export async function deleteVideo(token: string, videoId: string) {

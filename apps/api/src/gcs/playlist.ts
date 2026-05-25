@@ -4,6 +4,61 @@ export interface RewritePlaylistInput {
   signSegment: (objectPath: string) => Promise<string>;
 }
 
+export function rewritePlaylistWithProxySegments(playlist: string): string {
+  const lines = playlist.split("\n");
+  return lines.map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return line;
+    }
+
+    if (trimmed.startsWith("#")) {
+      return rewriteUriAttributeToProxy(line);
+    }
+
+    if (hasUriScheme(trimmed) || trimmed.startsWith("//")) {
+      return line;
+    }
+
+    assertSafeRelativeSegmentPath(trimmed);
+    return `hls/${trimmed.replace(/^\.\//, "")}`;
+  }).join("\n");
+}
+
+function rewriteUriAttributeToProxy(line: string): string {
+  const uriMatch = line.match(/URI="([^"]+)"/);
+  if (!uriMatch?.[1]) {
+    return line;
+  }
+
+  const uri = uriMatch[1];
+  if (hasUriScheme(uri) || uri.startsWith("//")) {
+    return line;
+  }
+
+  assertSafeRelativeSegmentPath(uri);
+  const proxyPath = `hls/${uri.replace(/^\.\//, "")}`;
+  return line.replace(`URI="${uri}"`, `URI="${proxyPath}"`);
+}
+
+function assertSafeRelativeSegmentPath(segmentPath: string): void {
+  if (
+    segmentPath.startsWith("/") ||
+    hasUriScheme(segmentPath) ||
+    segmentPath.startsWith("//")
+  ) {
+    throw new Error("Invalid HLS segment path");
+  }
+
+  const pathSegments = segmentPath.replace(/^\.\//, "").split("/");
+  if (
+    !segmentPath ||
+    pathSegments.some((segment) => segment === ".." || segment === "")
+  ) {
+    throw new Error("Invalid HLS segment path");
+  }
+}
+
 export async function rewritePlaylistWithSignedSegments(input: RewritePlaylistInput): Promise<string> {
   const lines = input.playlist.split("\n");
   const rewrittenLines = await Promise.all(lines.map(async (line) => {

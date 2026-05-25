@@ -10,12 +10,38 @@ interface VideoRecord {
   status: string;
 }
 
+const ROOM_PASSWORDS_KEY = "shareus:room-passwords";
+
+function loadRoomPasswords(): Record<string, string> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = localStorage.getItem(ROOM_PASSWORDS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function VideoLibrary({ token }: { token: string }) {
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [title, setTitle] = useState("");
   const [sourceObjectPath, setSourceObjectPath] = useState("");
-  const [roomPassword, setRoomPassword] = useState("");
+  const [roomPasswords, setRoomPasswords] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRoomPasswords(loadRoomPasswords());
+  }, []);
+
+  function updateRoomPassword(videoId: string, password: string) {
+    setRoomPasswords((previous) => {
+      const next = { ...previous, [videoId]: password };
+      localStorage.setItem(ROOM_PASSWORDS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
 
   async function refresh() {
     setVideos(await listVideos(token));
@@ -34,7 +60,12 @@ export function VideoLibrary({ token }: { token: string }) {
   }
 
   async function submitRoom(videoId: string) {
-    const room = await createRoom(token, { videoId, password: roomPassword });
+    const password = roomPasswords[videoId] ?? "";
+    if (password.length < 4) {
+      setNotice("请为该视频设置至少 4 位的房间密码");
+      return;
+    }
+    const room = await createRoom(token, { videoId, password });
     setNotice(`房间已创建：/room/${room.id}`);
   }
 
@@ -67,8 +98,22 @@ export function VideoLibrary({ token }: { token: string }) {
               </div>
               <div className="flex flex-wrap gap-2">
                 <button className="rounded-md border border-slate-700 px-3 py-2 text-sm" onClick={() => submitTranscode(video.id)}>转码</button>
-                <input className="w-36 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={roomPassword} onChange={(event) => setRoomPassword(event.target.value)} placeholder="房间密码" />
-                <button className="rounded-md bg-white px-3 py-2 text-sm text-slate-950" disabled={video.status !== "ready"} onClick={() => submitRoom(video.id)}>创建房间</button>
+                <input
+                  className="w-36 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm"
+                  type="password"
+                  name={`shareus-create-room-${video.id}`}
+                  autoComplete="new-password"
+                  value={roomPasswords[video.id] ?? ""}
+                  onChange={(event) => updateRoomPassword(video.id, event.target.value)}
+                  placeholder="该视频的房间密码"
+                />
+                <button
+                  className="rounded-md bg-white px-3 py-2 text-sm text-slate-950 disabled:opacity-40"
+                  disabled={video.status !== "ready" || (roomPasswords[video.id]?.length ?? 0) < 4}
+                  onClick={() => submitRoom(video.id)}
+                >
+                  创建房间
+                </button>
               </div>
             </div>
           </article>
