@@ -99,7 +99,7 @@ export function ChatPanel({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const socketRef = useRef<Socket | null>(socket);
   const nicknameRef = useRef(nickname);
   const collapsedRef = useRef(collapsed);
@@ -272,6 +272,23 @@ export function ChatPanel({
     return new Date(sentAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
   }
 
+  function onDraftKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) {
+      return;
+    }
+    event.preventDefault();
+    sendText();
+  }
+
+  const draftPlaceholder = uploading
+    ? "图片上传中…"
+    : aiThinking
+      ? "AI 思考中…"
+      : "Enter 发送，Ctrl+Enter 换行";
+
   if (collapsed) {
     return null;
   }
@@ -355,17 +372,18 @@ export function ChatPanel({
             onSend={(emoji) => sendText(emoji)}
           />
 
-          <div className="flex min-w-0 items-end gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={onPickImage}
-            />
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={onPickImage}
+          />
+
+          <div className="mb-2 flex min-w-0 items-center gap-1">
             <button
               type="button"
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#d9d9d9] bg-white text-xl leading-none text-[#555] hover:border-[#07c160] disabled:opacity-40"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none text-[#555] hover:bg-[#ececec] disabled:opacity-40"
               disabled={uploading || aiThinking}
               aria-label="发送图片"
               title="发送图片"
@@ -375,8 +393,8 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-white text-xl leading-none hover:border-[#07c160] disabled:opacity-40 ${
-                emojiOpen ? "border-[#07c160] text-[#07c160]" : "border-[#d9d9d9] text-[#555]"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none hover:bg-[#ececec] disabled:opacity-40 ${
+                emojiOpen ? "bg-[#ececec] text-[#07c160]" : "text-[#555]"
               }`}
               disabled={uploading || aiThinking}
               aria-label="表情"
@@ -387,7 +405,7 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              className="flex h-10 shrink-0 items-center justify-center rounded-md border border-[#576B95] bg-white px-2 text-xs font-medium text-[#576B95] hover:bg-[#eef3ff] disabled:opacity-40"
+              className="flex h-9 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium text-[#576B95] hover:bg-[#ececec] disabled:opacity-40"
               disabled={!draft.trim() || uploading || aiThinking}
               aria-label="问 AI"
               title="问 AI"
@@ -395,25 +413,23 @@ export function ChatPanel({
             >
               AI
             </button>
-            <input
+          </div>
+
+          <div className="flex min-w-0 items-end gap-2">
+            <textarea
               ref={inputRef}
-              className="min-w-0 flex-1 rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-base text-[#111] outline-none focus:border-[#07c160]"
+              rows={2}
+              className="min-h-[4.5rem] max-h-32 min-w-0 flex-1 resize-none rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-base leading-relaxed text-[#111] outline-none focus:border-[#07c160]"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onPaste={onPaste}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  sendText();
-                }
-              }}
-              placeholder={
-                uploading ? "图片上传中…" : aiThinking ? "AI 思考中…" : "Enter 发送，可问 AI 或粘贴截图"
-              }
+              onKeyDown={onDraftKeyDown}
+              placeholder={draftPlaceholder}
               disabled={uploading || aiThinking}
             />
             <button
-              className="shrink-0 rounded-md bg-[#07c160] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+              type="button"
+              className="shrink-0 rounded-md bg-[#07c160] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
               disabled={!draft.trim() || uploading || aiThinking}
               onClick={() => sendText()}
             >
