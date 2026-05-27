@@ -1,3 +1,4 @@
+export * from "./chatAi.js";
 export * from "./ids.js";
 export * from "./playback.js";
 export * from "./schemas.js";

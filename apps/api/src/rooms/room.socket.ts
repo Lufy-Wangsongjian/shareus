@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from "node:http";
-import { createChatMessageId, createWatchLogId, canControlWatchMode, type PlaybackState } from "@shareus/shared";
+import { createChatMessageId, createWatchLogId, canControlWatchMode, extractAiQuestion, type PlaybackState } from "@shareus/shared";
 import { Server } from "socket.io";
 import { z } from "zod";
 import type { ChatAiTurn } from "../ai/chatAi.service.js";
@@ -179,6 +179,54 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
       if (peer.nickname === nickname && socketId !== keepSocketId) {
         peers.delete(socketId);
       }
+    }
+  }
+
+  async function triggerAiReply(
+    roomId: string,
+    question: string,
+    askedBy: string,
+    errorSocket?: { emit: (event: string, payload: unknown) => void }
+  ): Promise<void> {
+    if (!deps?.askChatAi) {
+      errorSocket?.emit("chat:ai-error", { roomId, message: "AI 功能未配置" });
+      return;
+    }
+
+    io.to(roomId).emit("chat:ai-status", {
+      roomId,
+      status: "thinking",
+      askedBy
+    });
+
+    try {
+      const history = await deps.listChatMessages(roomId, 20);
+      const answer = await deps.askChatAi(question, history);
+
+      const aiRecord: ChatMessageRecord = {
+        id: createChatMessageId(),
+        roomId,
+        nickname: CHAT_AI_NICKNAME,
+        message: answer,
+        sentAt: new Date().toISOString(),
+        type: "ai"
+      };
+
+      await deps.saveChatMessage(aiRecord);
+      io.to(roomId).emit("chat:message", {
+        ...aiRecord,
+        socketId: undefined
+      });
+    } catch (error) {
+      errorSocket?.emit("chat:ai-error", {
+        roomId,
+        message: error instanceof Error ? error.message : "AI 回答失败"
+      });
+    } finally {
+      io.to(roomId).emit("chat:ai-status", {
+        roomId,
+        status: "idle"
+      });
     }
   }
 
@@ -391,6 +439,11 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         ...record,
         socketId: socket.id
       });
+
+      const aiQuestion = record.message ? extractAiQuestion(record.message) : null;
+      if (aiQuestion) {
+        void triggerAiReply(parsed.data.roomId, aiQuestion, nicknameOf(socket), socket);
+      }
     });
 
     socket.on("chat:ask-ai", async (payload: unknown) => {
@@ -403,17 +456,12 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         return;
       }
 
-      if (!deps.askChatAi) {
-        socket.emit("chat:ai-error", { roomId: parsed.data.roomId, message: "AI 功能未配置" });
-        return;
-      }
-
       const nickname = nicknameOf(socket);
       const userRecord: ChatMessageRecord = {
         id: createChatMessageId(),
         roomId: parsed.data.roomId,
         nickname,
-        message: parsed.data.question,
+        message: `@AI ${parsed.data.question}`,
         sentAt: new Date().toISOString(),
         type: "text"
       };
@@ -424,41 +472,7 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         socketId: socket.id
       });
 
-      io.to(parsed.data.roomId).emit("chat:ai-status", {
-        roomId: parsed.data.roomId,
-        status: "thinking",
-        askedBy: nickname
-      });
-
-      try {
-        const history = await deps.listChatMessages(parsed.data.roomId, 20);
-        const answer = await deps.askChatAi(parsed.data.question, history);
-
-        const aiRecord: ChatMessageRecord = {
-          id: createChatMessageId(),
-          roomId: parsed.data.roomId,
-          nickname: CHAT_AI_NICKNAME,
-          message: answer,
-          sentAt: new Date().toISOString(),
-          type: "ai"
-        };
-
-        await deps.saveChatMessage(aiRecord);
-        io.to(parsed.data.roomId).emit("chat:message", {
-          ...aiRecord,
-          socketId: undefined
-        });
-      } catch (error) {
-        socket.emit("chat:ai-error", {
-          roomId: parsed.data.roomId,
-          message: error instanceof Error ? error.message : "AI 回答失败"
-        });
-      } finally {
-        io.to(parsed.data.roomId).emit("chat:ai-status", {
-          roomId: parsed.data.roomId,
-          status: "idle"
-        });
-      }
+      void triggerAiReply(parsed.data.roomId, parsed.data.question, nickname, socket);
     });
 
     socket.on("watch:log", async (payload: unknown) => {

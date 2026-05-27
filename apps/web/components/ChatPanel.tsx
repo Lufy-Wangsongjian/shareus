@@ -1,9 +1,11 @@
 "use client";
 
+import { AI_MENTION } from "@shareus/shared";
 import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { chatImageUrl, uploadChatImage } from "../lib/chatImage";
 import { compressImageBlob } from "../lib/compressImage";
+import { loadChatTheme, saveChatTheme, type ChatTheme } from "../lib/chatTheme";
 import { EmojiPicker } from "./EmojiPicker";
 
 type ChatMessageType = "text" | "image" | "ai";
@@ -59,17 +61,37 @@ function messagePreview(message: ChatMessage): string {
   return message.message;
 }
 
-function bubbleClass(message: ChatMessage): string {
+function renderMessageText(text: string, isDark: boolean) {
+  const parts = text.split(/(@AI)/gi);
+  return parts.map((part, index) => {
+    if (part.toLowerCase() === "@ai") {
+      return (
+        <span key={index} className={`font-medium ${isDark ? "text-sky-400" : "text-[#576B95]"}`}>
+          {part}
+        </span>
+      );
+    }
+    return part;
+  });
+}
+
+function bubbleClass(message: ChatMessage, isDark: boolean): string {
   if (message.type === "image") {
-    return "overflow-hidden bg-white p-1";
+    return isDark ? "overflow-hidden bg-[#262626] p-1" : "overflow-hidden bg-white p-1";
   }
   if (message.type === "ai") {
-    return "bg-[#eef3ff] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-[#eef3ff] after:content-['']";
+    return isDark
+      ? "bg-[#1f2937] px-3 py-2 text-[15px] leading-relaxed text-slate-100 after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-[#1f2937] after:content-['']"
+      : "bg-[#eef3ff] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-[#eef3ff] after:content-['']";
   }
   if (message.isSelf) {
-    return "bg-[#95ec69] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-right-1.5 after:border-y-[6px] after:border-l-[6px] after:border-y-transparent after:border-l-[#95ec69] after:content-['']";
+    return isDark
+      ? "bg-[#2d5a34] px-3 py-2 text-[15px] leading-relaxed text-slate-100 after:absolute after:top-2 after:-right-1.5 after:border-y-[6px] after:border-l-[6px] after:border-y-transparent after:border-l-[#2d5a34] after:content-['']"
+      : "bg-[#95ec69] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-right-1.5 after:border-y-[6px] after:border-l-[6px] after:border-y-transparent after:border-l-[#95ec69] after:content-['']";
   }
-  return "bg-white px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-white after:content-['']";
+  return isDark
+    ? "bg-[#262626] px-3 py-2 text-[15px] leading-relaxed text-slate-100 after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-[#262626] after:content-['']"
+    : "bg-white px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-white after:content-['']";
 }
 
 export function ChatPanel({
@@ -97,6 +119,7 @@ export function ChatPanel({
   const [aiThinking, setAiThinking] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [chatTheme, setChatTheme] = useState<ChatTheme>("dark");
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -107,6 +130,20 @@ export function ChatPanel({
   socketRef.current = socket;
   nicknameRef.current = nickname;
   collapsedRef.current = collapsed;
+
+  useEffect(() => {
+    setChatTheme(loadChatTheme());
+  }, []);
+
+  const isDark = chatTheme === "dark";
+
+  function toggleChatTheme() {
+    setChatTheme((current) => {
+      const next: ChatTheme = current === "dark" ? "light" : "dark";
+      saveChatTheme(next);
+      return next;
+    });
+  }
 
   function appendMessage(payload: {
     id: string;
@@ -210,17 +247,32 @@ export function ChatPanel({
   function sendText(text?: string) {
     const content = (text ?? draft).trim();
     if (!content || !socket) return;
+    if (/^@AI\s*$/i.test(content)) {
+      window.alert("请在 @AI 后输入问题");
+      return;
+    }
     socket.emit("chat:message", { roomId, type: "text", message: content });
     setDraft("");
     setEmojiOpen(false);
   }
 
-  function askAi() {
-    const question = draft.trim();
-    if (!question || !socket || aiThinking) return;
-    socket.emit("chat:ask-ai", { roomId, question });
-    setDraft("");
-    setEmojiOpen(false);
+  function insertAiMention() {
+    const el = inputRef.current;
+    const mention = `${AI_MENTION} `;
+    if (!el) {
+      setDraft((current) => `${current}${mention}`);
+      return;
+    }
+
+    const start = el.selectionStart ?? draft.length;
+    const end = el.selectionEnd ?? draft.length;
+    const next = `${draft.slice(0, start)}${mention}${draft.slice(end)}`;
+    setDraft(next);
+    const cursor = start + mention.length;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(cursor, cursor);
+    });
   }
 
   function insertEmoji(emoji: string) {
@@ -287,7 +339,7 @@ export function ChatPanel({
     ? "图片上传中…"
     : aiThinking
       ? "AI 思考中…"
-      : "Enter 发送，Ctrl+Enter 换行";
+      : "输入 @AI 提问，Enter 发送，Ctrl+Enter 换行";
 
   if (collapsed) {
     return null;
@@ -295,21 +347,46 @@ export function ChatPanel({
 
   return (
     <>
-      <aside className={`flex min-w-0 flex-col overflow-hidden rounded-md border border-[#d9d9d9] bg-[#ededed] ${className}`}>
-        <div className="flex items-center justify-between border-b border-[#d9d9d9] bg-[#f7f7f7] px-3 py-2.5">
-          <span className="text-sm font-medium text-[#111]">聊天</span>
-          <button
-            type="button"
-            className="rounded px-2 py-1 text-xs text-[#666] hover:bg-[#ececec] hover:text-[#111]"
-            onClick={() => onCollapsedChange(true)}
-          >
-            收起
-          </button>
+      <aside className={`flex min-w-0 flex-col overflow-hidden rounded-md border ${
+        isDark ? "border-slate-800 bg-[#141414]" : "border-[#d9d9d9] bg-[#ededed]"
+      } ${className}`}>
+        <div className={`flex items-center justify-between border-b px-3 py-2.5 ${
+          isDark ? "border-slate-800 bg-[#1a1a1a]" : "border-[#d9d9d9] bg-[#f7f7f7]"
+        }`}>
+          <span className={`text-sm font-medium ${isDark ? "text-slate-200" : "text-[#111]"}`}>聊天</span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={`rounded px-2 py-1 text-xs ${
+                isDark
+                  ? "text-slate-400 hover:bg-[#262626] hover:text-slate-200"
+                  : "text-[#666] hover:bg-[#ececec] hover:text-[#111]"
+              }`}
+              aria-label={isDark ? "切换日间模式" : "切换夜间模式"}
+              title={isDark ? "日间模式" : "夜间模式"}
+              onClick={toggleChatTheme}
+            >
+              {isDark ? "☀️" : "🌙"}
+            </button>
+            <button
+              type="button"
+              className={`rounded px-2 py-1 text-xs ${
+                isDark
+                  ? "text-slate-400 hover:bg-[#262626] hover:text-slate-200"
+                  : "text-[#666] hover:bg-[#ececec] hover:text-[#111]"
+              }`}
+              onClick={() => onCollapsedChange(true)}
+            >
+              收起
+            </button>
+          </div>
         </div>
 
         <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
           {messages.length === 0 && !aiThinking ? (
-            <p className="py-8 text-center text-sm text-[#888]">还没有消息，打个招呼吧</p>
+            <p className={`py-8 text-center text-sm ${isDark ? "text-slate-500" : "text-[#888]"}`}>
+              还没有消息，打个招呼吧
+            </p>
           ) : null}
 
           {messages.map((message) => (
@@ -323,10 +400,12 @@ export function ChatPanel({
 
               <div className={`flex max-w-[72%] flex-col ${message.isSelf ? "items-end" : "items-start"}`}>
                 {!message.isSelf ? (
-                  <span className="mb-1 px-1 text-xs text-[#888]">{message.nickname}</span>
+                  <span className={`mb-1 px-1 text-xs ${isDark ? "text-slate-400" : "text-[#888]"}`}>
+                    {message.nickname}
+                  </span>
                 ) : null}
 
-                <div className={`relative break-words rounded-md shadow-sm ${bubbleClass(message)}`}>
+                <div className={`relative break-words rounded-md shadow-sm ${bubbleClass(message, isDark)}`}>
                   {message.type === "image" && message.imageObjectPath ? (
                     <button
                       type="button"
@@ -342,14 +421,18 @@ export function ChatPanel({
                       />
                     </button>
                   ) : (
-                    <span className="whitespace-pre-wrap">{message.message}</span>
+                    <span className="whitespace-pre-wrap">{renderMessageText(message.message, isDark)}</span>
                   )}
                   {message.type === "image" && message.message ? (
-                    <p className="px-2 py-1 text-sm text-[#333]">{message.message}</p>
+                    <p className={`px-2 py-1 text-sm ${isDark ? "text-slate-300" : "text-[#333]"}`}>
+                      {message.message}
+                    </p>
                   ) : null}
                 </div>
 
-                <span className="mt-1 px-1 text-[11px] text-[#b2b2b2]">{formatTime(message.sentAt)}</span>
+                <span className={`mt-1 px-1 text-[11px] ${isDark ? "text-slate-600" : "text-[#b2b2b2]"}`}>
+                  {formatTime(message.sentAt)}
+                </span>
               </div>
             </div>
           ))}
@@ -357,19 +440,24 @@ export function ChatPanel({
           {aiThinking ? (
             <div className="flex items-start gap-2.5">
               <Avatar name={AI_NICKNAME} type="ai" />
-              <div className="rounded-md bg-[#eef3ff] px-3 py-2 text-sm text-[#666]">
+              <div className={`rounded-md px-3 py-2 text-sm ${
+                isDark ? "bg-[#1f2937] text-slate-400" : "bg-[#eef3ff] text-[#666]"
+              }`}>
                 正在思考…
               </div>
             </div>
           ) : null}
         </div>
 
-        <div className="relative min-w-0 shrink-0 border-t border-[#d9d9d9] bg-[#f7f7f7] p-3">
+        <div className={`relative min-w-0 shrink-0 border-t p-3 ${
+          isDark ? "border-slate-800 bg-[#1a1a1a]" : "border-[#d9d9d9] bg-[#f7f7f7]"
+        }`}>
           <EmojiPicker
             open={emojiOpen}
             onClose={() => setEmojiOpen(false)}
             onInsert={insertEmoji}
             onSend={(emoji) => sendText(emoji)}
+            theme={chatTheme}
           />
 
           <input
@@ -383,7 +471,11 @@ export function ChatPanel({
           <div className="mb-2 flex min-w-0 items-center gap-1">
             <button
               type="button"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none text-[#555] hover:bg-[#ececec] disabled:opacity-40"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none disabled:opacity-40 ${
+                isDark
+                  ? "text-slate-400 hover:bg-[#262626]"
+                  : "text-[#555] hover:bg-[#ececec]"
+              }`}
               disabled={uploading || aiThinking}
               aria-label="发送图片"
               title="发送图片"
@@ -393,8 +485,14 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none hover:bg-[#ececec] disabled:opacity-40 ${
-                emojiOpen ? "bg-[#ececec] text-[#07c160]" : "text-[#555]"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xl leading-none disabled:opacity-40 ${
+                emojiOpen
+                  ? isDark
+                    ? "bg-[#262626] text-[#07c160]"
+                    : "bg-[#ececec] text-[#07c160]"
+                  : isDark
+                    ? "text-slate-400 hover:bg-[#262626]"
+                    : "text-[#555] hover:bg-[#ececec]"
               }`}
               disabled={uploading || aiThinking}
               aria-label="表情"
@@ -405,13 +503,17 @@ export function ChatPanel({
             </button>
             <button
               type="button"
-              className="flex h-9 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium text-[#576B95] hover:bg-[#ececec] disabled:opacity-40"
-              disabled={!draft.trim() || uploading || aiThinking}
-              aria-label="问 AI"
-              title="问 AI"
-              onClick={askAi}
+              className={`flex h-9 shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium disabled:opacity-40 ${
+                isDark
+                  ? "text-sky-400 hover:bg-[#262626]"
+                  : "text-[#576B95] hover:bg-[#ececec]"
+              }`}
+              disabled={uploading || aiThinking}
+              aria-label="提及 AI"
+              title="插入 @AI"
+              onClick={insertAiMention}
             >
-              AI
+              @AI
             </button>
           </div>
 
@@ -419,7 +521,11 @@ export function ChatPanel({
             <textarea
               ref={inputRef}
               rows={2}
-              className="min-h-[4.5rem] max-h-32 min-w-0 flex-1 resize-none rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-base leading-relaxed text-[#111] outline-none focus:border-[#07c160]"
+              className={`min-h-[4.5rem] max-h-32 min-w-0 flex-1 resize-none rounded-md border px-3 py-2.5 text-base leading-relaxed outline-none focus:border-[#07c160] ${
+                isDark
+                  ? "border-slate-700 bg-[#262626] text-slate-100 placeholder:text-slate-500"
+                  : "border-[#d9d9d9] bg-white text-[#111]"
+              }`}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onPaste={onPaste}
