@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Shareus",
-  description: "私人双人观影房间",
+  description: "私人观影",
   icons: {
     icon: "/icon.png",
     apple: "/icon.png"
