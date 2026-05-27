@@ -1,28 +1,35 @@
 "use client";
 
+type NoticePosition = "fixed" | "absolute";
+
 export function ChatFloatingNotice({
   visible,
   count,
   preview,
-  onOpen
+  onOpen,
+  position = "absolute"
 }: {
   visible: boolean;
   count: number;
   preview: string;
   onOpen: () => void;
+  position?: NoticePosition;
 }) {
   if (!visible) {
     return null;
   }
 
-  const baseClass = "absolute bottom-4 right-4 z-[9999] shadow-2xl backdrop-blur-sm transition hover:bg-[#1a1a1a]";
+  const positionClass = position === "fixed"
+    ? "fixed bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[9999]"
+    : "absolute bottom-[max(1rem,env(safe-area-inset-bottom))] right-[max(1rem,env(safe-area-inset-right))] z-[9999]";
+  const baseClass = `${positionClass} max-w-[min(18rem,calc(100vw-2rem))] shadow-2xl backdrop-blur-sm transition hover:bg-[#1a1a1a]`;
 
   if (count <= 0) {
     return (
       <button
         type="button"
         aria-label="展开聊天"
-        className={`${baseClass} flex h-12 w-12 items-center justify-center rounded-full border border-[#07c160]/40 bg-[#111]/90 text-xl`}
+        className={`${baseClass} flex h-12 w-12 max-w-none items-center justify-center rounded-full border border-[#07c160]/40 bg-[#111]/90 text-xl`}
         onClick={(event) => {
           event.stopPropagation();
           onOpen();
@@ -36,7 +43,7 @@ export function ChatFloatingNotice({
   return (
     <button
       type="button"
-      className={`${baseClass} max-w-[min(18rem,calc(100%-2rem))] rounded-xl border border-[#07c160]/40 bg-[#111]/90 px-4 py-3 text-left`}
+      className={`${baseClass} rounded-xl border border-[#07c160]/40 bg-[#111]/90 px-4 py-3 text-left`}
       onClick={(event) => {
         event.stopPropagation();
         onOpen();

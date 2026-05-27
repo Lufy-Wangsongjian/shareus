@@ -25,6 +25,7 @@ interface SyncedHlsPlayerProps {
   onHostChange: (input: { hostNickname: string; isHost: boolean }) => void;
   onLocalProgress: (progress: PeerProgressView | null) => void;
   overlay?: ReactNode;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
 }
 
 function describePlaybackState(state: PlaybackState): string {
@@ -48,7 +49,8 @@ export function SyncedHlsPlayer({
   onSyncEvent,
   onHostChange,
   onLocalProgress,
-  overlay
+  overlay,
+  onFullscreenChange
 }: SyncedHlsPlayerProps) {
   const ref = useRef<HTMLVideoElement | null>(null);
   const playerRootRef = useRef<HTMLDivElement | null>(null);
@@ -69,6 +71,10 @@ export function SyncedHlsPlayer({
   const wasSoftSyncingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
+
+  useEffect(() => {
+    onFullscreenChange?.(isPlayerFullscreen);
+  }, [isPlayerFullscreen, onFullscreenChange]);
 
   nicknameRef.current = nickname;
   socketRef.current = socket;
@@ -548,6 +554,32 @@ export function SyncedHlsPlayer({
       }
     }
 
+    async function onWebkitBeginFullscreen() {
+      const videoElement = video as HTMLVideoElement & {
+        webkitExitFullscreen?: () => void;
+        webkitDisplayingFullscreen?: boolean;
+      };
+      if (fullscreenRedirectRef.current || !root) {
+        return;
+      }
+      fullscreenRedirectRef.current = true;
+      try {
+        videoElement.webkitExitFullscreen?.();
+        await root.requestFullscreen();
+        setIsPlayerFullscreen(true);
+      } catch {
+        // iOS may reject programmatic fullscreen; keep native state.
+      } finally {
+        fullscreenRedirectRef.current = false;
+      }
+    }
+
+    function onWebkitEndFullscreen() {
+      if (document.fullscreenElement !== root) {
+        setIsPlayerFullscreen(false);
+      }
+    }
+
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "f" && event.key !== "F") {
         return;
@@ -571,12 +603,16 @@ export function SyncedHlsPlayer({
     }
 
     root.addEventListener("dblclick", onDoubleClick);
+    video.addEventListener("webkitbeginfullscreen", onWebkitBeginFullscreen);
+    video.addEventListener("webkitendfullscreen", onWebkitEndFullscreen);
     document.addEventListener("fullscreenchange", redirectVideoFullscreen);
     document.addEventListener("webkitfullscreenchange", redirectVideoFullscreen);
     window.addEventListener("keydown", onKeyDown);
 
     return () => {
       root.removeEventListener("dblclick", onDoubleClick);
+      video.removeEventListener("webkitbeginfullscreen", onWebkitBeginFullscreen);
+      video.removeEventListener("webkitendfullscreen", onWebkitEndFullscreen);
       document.removeEventListener("fullscreenchange", redirectVideoFullscreen);
       document.removeEventListener("webkitfullscreenchange", redirectVideoFullscreen);
       window.removeEventListener("keydown", onKeyDown);

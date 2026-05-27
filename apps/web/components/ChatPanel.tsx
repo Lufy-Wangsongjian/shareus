@@ -218,7 +218,7 @@ export function ChatPanel({
 
   return (
     <>
-      <aside className={`flex flex-col overflow-hidden rounded-md border border-[#d9d9d9] bg-[#ededed] ${className}`}>
+      <aside className={`flex min-w-0 flex-col overflow-hidden rounded-md border border-[#d9d9d9] bg-[#ededed] ${className}`}>
         <div className="flex items-center justify-between border-b border-[#d9d9d9] bg-[#f7f7f7] px-3 py-2.5">
           <span className="text-sm font-medium text-[#111]">聊天</span>
           <button
@@ -284,8 +284,8 @@ export function ChatPanel({
           ))}
         </div>
 
-        <div className="border-t border-[#d9d9d9] bg-[#f7f7f7] p-3">
-          <div className="flex items-end gap-2">
+        <div className="min-w-0 shrink-0 border-t border-[#d9d9d9] bg-[#f7f7f7] p-3">
+          <div className="flex min-w-0 items-end gap-2">
             <input
               ref={fileInputRef}
               type="file"
@@ -304,7 +304,7 @@ export function ChatPanel({
               +
             </button>
             <input
-              className="min-w-0 flex-1 rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-sm text-[#111] outline-none focus:border-[#07c160]"
+              className="min-w-0 flex-1 rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-base text-[#111] outline-none focus:border-[#07c160]"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onPaste={onPaste}
@@ -318,7 +318,7 @@ export function ChatPanel({
               disabled={uploading}
             />
             <button
-              className="rounded-md bg-[#07c160] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
+              className="shrink-0 rounded-md bg-[#07c160] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
               disabled={!draft.trim() || uploading}
               onClick={sendText}
             >

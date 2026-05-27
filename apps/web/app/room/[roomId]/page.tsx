@@ -46,7 +46,19 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
   const [chatCollapsed, setChatCollapsed] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
   const [chatPreview, setChatPreview] = useState("");
+  const [isPlayerFullscreen, setIsPlayerFullscreen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const openChat = useCallback(() => {
+    setChatCollapsed(false);
+    setChatUnread(0);
+    setChatPreview("");
+  }, []);
+
+  const onIncomingChatMessage = useCallback((preview: string) => {
+    setChatUnread((count) => count + 1);
+    setChatPreview(preview);
+  }, []);
+
   const playlistUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080"}/api/rooms/${params.roomId}/playlist.m3u8`;
 
   const appendSyncEvent = useCallback((message: string) => {
@@ -161,10 +173,10 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
 
   if (!joined || !videoId) {
     return (
-      <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center px-4">
+      <main className="mx-auto flex min-h-screen w-full max-w-sm flex-col justify-center overflow-x-hidden px-4">
         <h1 className="text-2xl font-semibold">加入房间</h1>
         <input
-          className="mt-6 rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+          className="mt-6 w-full max-w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-base"
           type="text"
           name={`shareus-nickname-${params.roomId}`}
           autoComplete="nickname"
@@ -174,7 +186,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
           maxLength={20}
         />
         <input
-          className="mt-3 rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
+          className="mt-3 w-full max-w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-base"
           type="password"
           name={`shareus-room-${params.roomId}`}
           autoComplete="new-password"
@@ -199,9 +211,18 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
   }
 
   return (
-    <main className="flex h-[100dvh] flex-col gap-2 overflow-hidden p-2 lg:grid lg:grid-cols-[1fr_280px] lg:grid-rows-1 lg:gap-3 lg:p-3">
+    <main className="flex h-[100dvh] w-full max-w-[100vw] flex-col gap-2 overflow-x-hidden overflow-y-hidden p-2 lg:grid lg:grid-cols-[1fr_280px] lg:grid-rows-1 lg:gap-3 lg:p-3">
+      {chatCollapsed && !isPlayerFullscreen ? (
+        <ChatFloatingNotice
+          visible
+          position="fixed"
+          count={chatUnread}
+          preview={chatPreview}
+          onOpen={openChat}
+        />
+      ) : null}
       <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="min-h-0 flex-1">
+        <div className="min-h-0 min-w-0 flex-1">
           <SyncedHlsPlayer
             src={playlistUrl}
             roomId={params.roomId}
@@ -215,20 +236,20 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
               setHostNickname(nextHost);
               setIsHost(nextIsHost);
             }}
-          onLocalProgress={setLocalProgress}
-          overlay={
-            <ChatFloatingNotice
-              visible={chatCollapsed}
-              count={chatUnread}
-              preview={chatPreview}
-              onOpen={() => {
-                setChatCollapsed(false);
-                setChatUnread(0);
-                setChatPreview("");
-              }}
-            />
-          }
-        />
+            onLocalProgress={setLocalProgress}
+            onFullscreenChange={setIsPlayerFullscreen}
+            overlay={
+              chatCollapsed && isPlayerFullscreen ? (
+                <ChatFloatingNotice
+                  visible
+                  position="absolute"
+                  count={chatUnread}
+                  preview={chatPreview}
+                  onOpen={openChat}
+                />
+              ) : null
+            }
+          />
         </div>
         <div className="mt-2 shrink-0 lg:hidden">
           <RoomControls
@@ -246,7 +267,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
           />
         </div>
       </section>
-      <aside className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden lg:flex-none lg:h-full">
+      <aside className={`min-h-0 min-w-0 flex-col gap-2 overflow-hidden lg:flex lg:h-full lg:flex-none ${chatCollapsed ? "hidden lg:flex" : "flex flex-1"}`}>
         <div className="hidden shrink-0 lg:block">
           <RoomControls
             roomId={params.roomId}
@@ -276,10 +297,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
               setChatPreview("");
             }
           }}
-          onIncomingMessage={(preview) => {
-            setChatUnread((count) => count + 1);
-            setChatPreview(preview);
-          }}
+          onIncomingMessage={onIncomingChatMessage}
         />
       </aside>
     </main>
