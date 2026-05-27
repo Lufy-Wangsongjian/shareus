@@ -80,10 +80,11 @@ export function createFirestoreAdapter() {
         .collection("rooms")
         .doc(roomId)
         .collection("watchLogs")
-        .orderBy("createdAt", "desc")
-        .limit(limit)
         .get();
-      return snap.docs.map((doc) => doc.data() as WatchLogRecord);
+      return snap.docs
+        .map((doc) => doc.data() as WatchLogRecord)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, limit);
     },
     async saveChatMessage(message: ChatMessageRecord): Promise<ChatMessageRecord> {
       await db
