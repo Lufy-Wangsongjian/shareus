@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from "node:http";
-import { createChatMessageId, createWatchLogId, type PlaybackState } from "@shareus/shared";
+import { createChatMessageId, createWatchLogId, canControlWatchMode, type PlaybackState } from "@shareus/shared";
 import { Server } from "socket.io";
 import { z } from "zod";
 import type { ChatMessageRecord } from "./chat.model.js";
@@ -192,8 +192,12 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         return;
       }
 
-      roomWatchModes.set(parsed.data.roomId, parsed.data.mode);
       const nickname = nicknameOf(socket);
+      if (!canControlWatchMode(nickname)) {
+        return;
+      }
+
+      roomWatchModes.set(parsed.data.roomId, parsed.data.mode);
       const modeLabel = parsed.data.mode === "free" ? "各看各的" : "同步观影";
       void recordWatchLog(deps, {
         roomId: parsed.data.roomId,

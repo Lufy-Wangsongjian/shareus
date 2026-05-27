@@ -14,6 +14,12 @@ import type { PeerProgressView, WatchMode } from "../../../lib/watchMode";
 
 const NICKNAME_KEY = "shareus:nickname";
 const DEFAULT_NICKNAME = "Alice";
+
+function unlockPasswordInput(input: HTMLInputElement) {
+  if (input.readOnly) {
+    input.readOnly = false;
+  }
+}
 const ROOM_PASSWORD_KEY = "shareus:room-password";
 
 interface JoinRoomResponse {
@@ -171,10 +177,12 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
           className="mt-3 rounded-md border border-slate-700 bg-slate-900 px-3 py-2"
           type="password"
           name={`shareus-room-${params.roomId}`}
-          autoComplete="off"
+          autoComplete="new-password"
           readOnly
           value={password}
-          onFocus={(event) => event.currentTarget.removeAttribute("readonly")}
+          onTouchStart={(event) => unlockPasswordInput(event.currentTarget)}
+          onPointerDown={(event) => unlockPasswordInput(event.currentTarget)}
+          onFocus={(event) => unlockPasswordInput(event.currentTarget)}
           onChange={(event) => setPassword(event.target.value)}
           placeholder="房间密码"
         />
@@ -226,6 +234,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
           <RoomControls
             roomId={params.roomId}
             socket={socket}
+            nickname={nickname.trim()}
             status={status}
             syncEvents={syncEvents}
             hostNickname={hostNickname}
@@ -242,6 +251,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
           <RoomControls
             roomId={params.roomId}
             socket={socket}
+            nickname={nickname.trim()}
             status={status}
             syncEvents={syncEvents}
             hostNickname={hostNickname}

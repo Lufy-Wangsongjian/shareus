@@ -1,11 +1,11 @@
 "use client";
 
-import { calculateExpectedPosition } from "@shareus/shared";
+import { calculateExpectedPosition, canControlWatchMode, type WatchMode } from "@shareus/shared";
 import { useEffect, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { formatPlaybackTime } from "../lib/formatTime";
 import type { SyncLogEntry } from "../lib/syncLog";
-import type { PeerProgressView, WatchMode } from "../lib/watchMode";
+import type { PeerProgressView } from "../lib/watchMode";
 
 function livePosition(progress: PeerProgressView): number {
   return calculateExpectedPosition({
@@ -70,6 +70,7 @@ function modeHint(
 export function RoomControls({
   roomId,
   socket,
+  nickname,
   status,
   syncEvents,
   hostNickname,
@@ -81,6 +82,7 @@ export function RoomControls({
 }: {
   roomId: string;
   socket: Socket | null;
+  nickname: string;
   status: string;
   syncEvents: SyncLogEntry[];
   hostNickname: string | null;
@@ -91,6 +93,7 @@ export function RoomControls({
   peerProgresses: PeerProgressView[];
 }) {
   const [logOpen, setLogOpen] = useState(false);
+  const canSwitchWatchMode = canControlWatchMode(nickname);
 
   function switchMode(mode: WatchMode) {
     if (mode === watchMode) {
@@ -101,37 +104,45 @@ export function RoomControls({
   }
 
   const latestLog = syncEvents.at(-1);
+  const showProgress = watchMode === "free";
+  const showLogs = canSwitchWatchMode;
+
+  if (!canSwitchWatchMode && !showProgress) {
+    return null;
+  }
 
   return (
     <div className="rounded-md border border-slate-800 bg-slate-900/60 text-[11px] leading-tight text-slate-300">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5">
-        <div className="inline-flex shrink-0 rounded border border-slate-700 p-px">
-          <button
-            type="button"
-            className={`rounded-sm px-2 py-0.5 transition ${
-              watchMode === "sync" ? "bg-white text-slate-950" : "text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => switchMode("sync")}
-          >
-            同步
-          </button>
-          <button
-            type="button"
-            className={`rounded-sm px-2 py-0.5 transition ${
-              watchMode === "free" ? "bg-white text-slate-950" : "text-slate-400 hover:text-slate-200"
-            }`}
-            onClick={() => switchMode("free")}
-          >
-            自由
-          </button>
+      {canSwitchWatchMode ? (
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-2 py-1.5">
+          <div className="inline-flex shrink-0 rounded border border-slate-700 p-px">
+            <button
+              type="button"
+              className={`rounded-sm px-2 py-0.5 transition ${
+                watchMode === "sync" ? "bg-white text-slate-950" : "text-slate-400 hover:text-slate-200"
+              }`}
+              onClick={() => switchMode("sync")}
+            >
+              同步
+            </button>
+            <button
+              type="button"
+              className={`rounded-sm px-2 py-0.5 transition ${
+                watchMode === "free" ? "bg-white text-slate-950" : "text-slate-400 hover:text-slate-200"
+              }`}
+              onClick={() => switchMode("free")}
+            >
+              自由
+            </button>
+          </div>
+          <span className="truncate text-slate-400">{modeHint(watchMode, hostNickname, isHost)}</span>
+          <span className="hidden truncate text-slate-500 sm:inline">·</span>
+          <span className="hidden truncate text-slate-500 sm:inline">{status}</span>
         </div>
-        <span className="truncate text-slate-400">{modeHint(watchMode, hostNickname, isHost)}</span>
-        <span className="hidden truncate text-slate-500 sm:inline">·</span>
-        <span className="hidden truncate text-slate-500 sm:inline">{status}</span>
-      </div>
+      ) : null}
 
-      {watchMode === "free" ? (
-        <div className="flex flex-wrap gap-1 border-t border-slate-800 px-2 py-1.5">
+      {showProgress ? (
+        <div className={`flex flex-wrap gap-1 px-2 py-1.5 ${canSwitchWatchMode ? "border-t border-slate-800" : ""}`}>
           {localProgress ? (
             <ProgressChip label="我" progress={localProgress} highlight />
           ) : null}
@@ -144,44 +155,46 @@ export function RoomControls({
         </div>
       ) : null}
 
-      <div className="border-t border-slate-800">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between px-2 py-1 text-left text-slate-500 hover:text-slate-300"
-          onClick={() => setLogOpen((open) => !open)}
-        >
-          <span>{watchMode === "free" ? "观影日志" : "同步日志"}</span>
-          <span className="text-slate-600">
-            {syncEvents.length > 0 ? `${syncEvents.length} 条` : "空"}
-            {" "}
-            {logOpen ? "▾" : "▸"}
-          </span>
-        </button>
-        {logOpen ? (
-          <div className="max-h-24 space-y-0.5 overflow-y-auto border-t border-slate-800/50 px-2 py-1">
-            {syncEvents.length === 0 ? (
-              <p className="text-slate-600">暂无记录</p>
-            ) : (
-              syncEvents
-                .slice()
-                .reverse()
-                .map((entry) => (
-                  <div key={entry.id} className="text-slate-400">
-                    <span className="text-slate-600">{entry.time}</span>
-                    {" "}
-                    {entry.message}
-                  </div>
-                ))
-            )}
-          </div>
-        ) : latestLog ? (
-          <div className="truncate border-t border-slate-800/50 px-2 py-1 text-slate-500">
-            <span className="text-slate-600">{latestLog.time}</span>
-            {" "}
-            {latestLog.message}
-          </div>
-        ) : null}
-      </div>
+      {showLogs ? (
+        <div className="border-t border-slate-800">
+          <button
+            type="button"
+            className="flex w-full items-center justify-between px-2 py-1 text-left text-slate-500 hover:text-slate-300"
+            onClick={() => setLogOpen((open) => !open)}
+          >
+            <span>{watchMode === "free" ? "观影日志" : "同步日志"}</span>
+            <span className="text-slate-600">
+              {syncEvents.length > 0 ? `${syncEvents.length} 条` : "空"}
+              {" "}
+              {logOpen ? "▾" : "▸"}
+            </span>
+          </button>
+          {logOpen ? (
+            <div className="max-h-24 space-y-0.5 overflow-y-auto border-t border-slate-800/50 px-2 py-1">
+              {syncEvents.length === 0 ? (
+                <p className="text-slate-600">暂无记录</p>
+              ) : (
+                syncEvents
+                  .slice()
+                  .reverse()
+                  .map((entry) => (
+                    <div key={entry.id} className="text-slate-400">
+                      <span className="text-slate-600">{entry.time}</span>
+                      {" "}
+                      {entry.message}
+                    </div>
+                  ))
+              )}
+            </div>
+          ) : latestLog ? (
+            <div className="truncate border-t border-slate-800/50 px-2 py-1 text-slate-500">
+              <span className="text-slate-600">{latestLog.time}</span>
+              {" "}
+              {latestLog.message}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
