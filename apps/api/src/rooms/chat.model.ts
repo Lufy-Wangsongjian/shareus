@@ -1,4 +1,4 @@
-export type ChatMessageType = "text" | "image";
+export type ChatMessageType = "text" | "image" | "ai";
 
 export interface ChatMessageRecord {
   id: string;

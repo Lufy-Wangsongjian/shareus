@@ -1,4 +1,5 @@
 import "./loadEnv.js";
+import { createChatAiClient, DEFAULT_CHAT_AI_BASE_URL, DEFAULT_CHAT_AI_MODEL } from "./ai/chatAi.service.js";
 import { loadConfig } from "./config.js";
 import { createFirestoreAdapter } from "./firestore.js";
 import { attachRoomSocket } from "./rooms/room.socket.js";
@@ -8,6 +9,11 @@ const config = loadConfig();
 const deps = createProductionDeps(config);
 const firestore = createFirestoreAdapter();
 const server = await buildServer(config, deps);
+const chatAi = createChatAiClient(config.chatAiApiKey ? {
+  apiKey: config.chatAiApiKey,
+  baseUrl: config.chatAiBaseUrl ?? DEFAULT_CHAT_AI_BASE_URL,
+  model: config.chatAiModel ?? DEFAULT_CHAT_AI_MODEL
+} : null);
 
 attachRoomSocket(server.server, deps.roomRepo ? {
   getRoomPlaybackState: async (roomId) => {
@@ -22,7 +28,8 @@ attachRoomSocket(server.server, deps.roomRepo ? {
   },
   saveChatMessage: firestore.saveChatMessage,
   listChatMessages: firestore.listChatMessages,
-  saveWatchLog: firestore.saveWatchLog
+  saveWatchLog: firestore.saveWatchLog,
+  askChatAi: chatAi ? (question, history) => chatAi.ask(question, history) : undefined
 } : undefined);
 
 const port = Number(process.env.PORT ?? 8080);

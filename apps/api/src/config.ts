@@ -7,7 +7,10 @@ export const appConfigSchema = z.object({
   gcpProjectId: z.string().min(1),
   gcsBucket: z.string().min(1),
   transcoderJobName: z.string().min(1),
-  transcoderRegion: z.string().min(1)
+  transcoderRegion: z.string().min(1),
+  chatAiApiKey: z.string().min(1).optional(),
+  chatAiBaseUrl: z.string().url().optional(),
+  chatAiModel: z.string().min(1).optional()
 });
 
 export type AppConfig = z.infer<typeof appConfigSchema>;
@@ -20,6 +23,9 @@ export function loadConfig(env = process.env): AppConfig {
     gcpProjectId: env.GCP_PROJECT_ID,
     gcsBucket: env.GCS_BUCKET,
     transcoderJobName: env.TRANSCODER_JOB_NAME,
-    transcoderRegion: env.TRANSCODER_REGION
+    transcoderRegion: env.TRANSCODER_REGION,
+    chatAiApiKey: env.CHAT_AI_API_KEY?.trim() || undefined,
+    chatAiBaseUrl: env.CHAT_AI_BASE_URL?.trim() || undefined,
+    chatAiModel: env.CHAT_AI_MODEL?.trim() || undefined
   });
 }

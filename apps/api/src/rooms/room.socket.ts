@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { createChatMessageId, createWatchLogId, canControlWatchMode, type PlaybackState } from "@shareus/shared";
 import { Server } from "socket.io";
 import { z } from "zod";
+import type { ChatAiTurn } from "../ai/chatAi.service.js";
 import type { ChatMessageRecord } from "./chat.model.js";
 import type { WatchLogRecord } from "./watchLog.model.js";
 
@@ -27,6 +28,16 @@ const chatMessageSchema = z.discriminatedUnion("type", [
     imageObjectPath: z.string().min(1)
   })
 ]);
+
+const chatAskAiSchema = z.object({
+  roomId: z.string().min(1),
+  question: z.string().trim().min(1).max(500)
+});
+
+const CHAT_AI_NICKNAME = "AI助手";
+
+/** 断线后等待重连的时间，避免网络闪断误报「离开房间」 */
+const LEAVE_GRACE_MS = 8_000;
 
 const roomJoinSchema = z.object({
   roomId: z.string().min(1),
@@ -69,6 +80,7 @@ export interface RoomSocketDeps {
   saveChatMessage: (message: ChatMessageRecord) => Promise<ChatMessageRecord>;
   listChatMessages: (roomId: string, limit?: number) => Promise<ChatMessageRecord[]>;
   saveWatchLog: (entry: WatchLogRecord) => Promise<WatchLogRecord>;
+  askChatAi?: (question: string, history: ChatAiTurn[]) => Promise<string>;
 }
 
 function nicknameOf(socket: { data: Record<string, unknown> }): string {
@@ -116,6 +128,59 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
   const roomHosts = new Map<string, string>();
   const roomWatchModes = new Map<string, WatchMode>();
   const roomPeerProgress = new Map<string, Map<string, PeerProgress>>();
+  const pendingLeaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function pendingLeaveKey(roomId: string, nickname: string): string {
+    return `${roomId}:${nickname}`;
+  }
+
+  function cancelPendingLeave(roomId: string, nickname: string): boolean {
+    const key = pendingLeaveKey(roomId, nickname);
+    const timer = pendingLeaveTimers.get(key);
+    if (!timer) {
+      return false;
+    }
+    clearTimeout(timer);
+    pendingLeaveTimers.delete(key);
+    return true;
+  }
+
+  function schedulePendingLeave(
+    roomId: string,
+    socketId: string,
+    nickname: string
+  ): void {
+    cancelPendingLeave(roomId, nickname);
+    const key = pendingLeaveKey(roomId, nickname);
+    pendingLeaveTimers.set(key, setTimeout(() => {
+      pendingLeaveTimers.delete(key);
+      const peers = peerProgressMap(roomId);
+      if (peers.has(socketId)) {
+        peers.delete(socketId);
+        io.to(roomId).emit("playback:peer-left", {
+          roomId,
+          socketId,
+          nickname
+        });
+      }
+      if (deps) {
+        void recordWatchLog(deps, {
+          roomId,
+          nickname,
+          message: `${nickname} 离开了房间`
+        });
+      }
+    }, LEAVE_GRACE_MS));
+  }
+
+  function removeStalePeersForNickname(roomId: string, nickname: string, keepSocketId: string): void {
+    const peers = peerProgressMap(roomId);
+    for (const [socketId, peer] of peers) {
+      if (peer.nickname === nickname && socketId !== keepSocketId) {
+        peers.delete(socketId);
+      }
+    }
+  }
 
   function peerProgressMap(roomId: string): Map<string, PeerProgress> {
     let map = roomPeerProgress.get(roomId);
@@ -136,6 +201,9 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
 
       socket.data.nickname = parsed.data.nickname;
       socket.join(parsed.data.roomId);
+
+      const wasReconnect = cancelPendingLeave(parsed.data.roomId, parsed.data.nickname);
+      removeStalePeersForNickname(parsed.data.roomId, parsed.data.nickname, socket.id);
 
       let hostSocketId = roomHosts.get(parsed.data.roomId);
       if (!hostSocketId) {
@@ -179,11 +247,13 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         });
       }
 
-      await recordWatchLog(deps, {
-        roomId: parsed.data.roomId,
-        nickname: parsed.data.nickname,
-        message: `${parsed.data.nickname} 加入了房间`
-      });
+      if (deps && !wasReconnect) {
+        await recordWatchLog(deps, {
+          roomId: parsed.data.roomId,
+          nickname: parsed.data.nickname,
+          message: `${parsed.data.nickname} 加入了房间`
+        });
+      }
     });
 
     socket.on("room:watch-mode", (payload: unknown) => {
@@ -323,6 +393,74 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
       });
     });
 
+    socket.on("chat:ask-ai", async (payload: unknown) => {
+      const parsed = chatAskAiSchema.safeParse(payload);
+      if (!parsed.success || !deps) {
+        return;
+      }
+
+      if (!socket.rooms.has(parsed.data.roomId)) {
+        return;
+      }
+
+      if (!deps.askChatAi) {
+        socket.emit("chat:ai-error", { roomId: parsed.data.roomId, message: "AI 功能未配置" });
+        return;
+      }
+
+      const nickname = nicknameOf(socket);
+      const userRecord: ChatMessageRecord = {
+        id: createChatMessageId(),
+        roomId: parsed.data.roomId,
+        nickname,
+        message: parsed.data.question,
+        sentAt: new Date().toISOString(),
+        type: "text"
+      };
+
+      await deps.saveChatMessage(userRecord);
+      io.to(parsed.data.roomId).emit("chat:message", {
+        ...userRecord,
+        socketId: socket.id
+      });
+
+      io.to(parsed.data.roomId).emit("chat:ai-status", {
+        roomId: parsed.data.roomId,
+        status: "thinking",
+        askedBy: nickname
+      });
+
+      try {
+        const history = await deps.listChatMessages(parsed.data.roomId, 20);
+        const answer = await deps.askChatAi(parsed.data.question, history);
+
+        const aiRecord: ChatMessageRecord = {
+          id: createChatMessageId(),
+          roomId: parsed.data.roomId,
+          nickname: CHAT_AI_NICKNAME,
+          message: answer,
+          sentAt: new Date().toISOString(),
+          type: "ai"
+        };
+
+        await deps.saveChatMessage(aiRecord);
+        io.to(parsed.data.roomId).emit("chat:message", {
+          ...aiRecord,
+          socketId: undefined
+        });
+      } catch (error) {
+        socket.emit("chat:ai-error", {
+          roomId: parsed.data.roomId,
+          message: error instanceof Error ? error.message : "AI 回答失败"
+        });
+      } finally {
+        io.to(parsed.data.roomId).emit("chat:ai-status", {
+          roomId: parsed.data.roomId,
+          status: "idle"
+        });
+      }
+    });
+
     socket.on("watch:log", async (payload: unknown) => {
       const parsed = watchLogSchema.safeParse(payload);
       if (!parsed.success) {
@@ -346,21 +484,7 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
           continue;
         }
 
-        const peers = peerProgressMap(roomId);
-        if (peers.has(socket.id)) {
-          peers.delete(socket.id);
-          socket.to(roomId).emit("playback:peer-left", {
-            roomId,
-            socketId: socket.id,
-            nickname: nicknameOf(socket)
-          });
-        }
-
-        void recordWatchLog(deps, {
-          roomId,
-          nickname: nicknameOf(socket),
-          message: `${nicknameOf(socket)} 离开了房间`
-        });
+        schedulePendingLeave(roomId, socket.id, nicknameOf(socket));
 
         if (roomHosts.get(roomId) !== socket.id) {
           continue;

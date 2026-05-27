@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { chatImageUrl, uploadChatImage } from "../lib/chatImage";
 import { compressImageBlob } from "../lib/compressImage";
+import { EmojiPicker } from "./EmojiPicker";
 
-type ChatMessageType = "text" | "image";
+type ChatMessageType = "text" | "image" | "ai";
+
+const AI_NICKNAME = "AI助手";
 
 interface ChatMessage {
   id: string;
@@ -26,7 +29,15 @@ function avatarColor(name: string): string {
   return colors[hash]!;
 }
 
-function Avatar({ name }: { name: string }) {
+function Avatar({ name, type }: { name: string; type?: ChatMessageType }) {
+  if (type === "ai" || name === AI_NICKNAME) {
+    return (
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[#576B95] text-base">
+        🤖
+      </div>
+    );
+  }
+
   const initial = name.trim().charAt(0).toUpperCase() || "?";
   return (
     <div
@@ -42,7 +53,23 @@ function messagePreview(message: ChatMessage): string {
   if (message.type === "image") {
     return message.message.trim() || "[图片]";
   }
+  if (message.type === "ai") {
+    return message.message.slice(0, 40) || "[AI 回复]";
+  }
   return message.message;
+}
+
+function bubbleClass(message: ChatMessage): string {
+  if (message.type === "image") {
+    return "overflow-hidden bg-white p-1";
+  }
+  if (message.type === "ai") {
+    return "bg-[#eef3ff] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-[#eef3ff] after:content-['']";
+  }
+  if (message.isSelf) {
+    return "bg-[#95ec69] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-right-1.5 after:border-y-[6px] after:border-l-[6px] after:border-y-transparent after:border-l-[#95ec69] after:content-['']";
+  }
+  return "bg-white px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-white after:content-['']";
 }
 
 export function ChatPanel({
@@ -67,9 +94,12 @@ export function ChatPanel({
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [aiThinking, setAiThinking] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const socketRef = useRef<Socket | null>(socket);
   const nicknameRef = useRef(nickname);
   const collapsedRef = useRef(collapsed);
@@ -88,8 +118,8 @@ export function ChatPanel({
     imageObjectPath?: string;
   }) {
     const currentSocketId = socketRef.current?.id;
-    const isSelf = payload.socketId === currentSocketId
-      || payload.nickname === nicknameRef.current;
+    const isSelf = payload.type !== "ai"
+      && (payload.socketId === currentSocketId || payload.nickname === nicknameRef.current);
 
     const nextMessage: ChatMessage = {
       id: payload.id,
@@ -143,15 +173,30 @@ export function ChatPanel({
       setMessages(payload.messages.map((message) => ({
         ...message,
         type: message.type ?? "text",
-        isSelf: message.nickname === nicknameRef.current
+        isSelf: message.type !== "ai" && message.nickname === nicknameRef.current
       })));
+    }
+
+    function onAiStatus(payload: { roomId: string; status: "thinking" | "idle" }) {
+      if (payload.roomId !== roomId) return;
+      setAiThinking(payload.status === "thinking");
+    }
+
+    function onAiError(payload: { roomId: string; message: string }) {
+      if (payload.roomId !== roomId) return;
+      setAiThinking(false);
+      window.alert(payload.message);
     }
 
     socket.on("chat:message", onMessage);
     socket.on("chat:history", onHistory);
+    socket.on("chat:ai-status", onAiStatus);
+    socket.on("chat:ai-error", onAiError);
     return () => {
       socket.off("chat:message", onMessage);
       socket.off("chat:history", onHistory);
+      socket.off("chat:ai-status", onAiStatus);
+      socket.off("chat:ai-error", onAiError);
     };
   }, [socket, roomId, onIncomingMessage]);
 
@@ -160,13 +205,27 @@ export function ChatPanel({
       return;
     }
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, collapsed]);
+  }, [messages, collapsed, aiThinking]);
 
-  function sendText() {
-    const text = draft.trim();
-    if (!text || !socket) return;
-    socket.emit("chat:message", { roomId, type: "text", message: text });
+  function sendText(text?: string) {
+    const content = (text ?? draft).trim();
+    if (!content || !socket) return;
+    socket.emit("chat:message", { roomId, type: "text", message: content });
     setDraft("");
+    setEmojiOpen(false);
+  }
+
+  function askAi() {
+    const question = draft.trim();
+    if (!question || !socket || aiThinking) return;
+    socket.emit("chat:ask-ai", { roomId, question });
+    setDraft("");
+    setEmojiOpen(false);
+  }
+
+  function insertEmoji(emoji: string) {
+    setDraft((current) => `${current}${emoji}`);
+    inputRef.current?.focus();
   }
 
   async function sendImageBlob(blob: Blob) {
@@ -184,6 +243,7 @@ export function ChatPanel({
         message: caption || undefined
       });
       setDraft("");
+      setEmojiOpen(false);
     } catch (error) {
       window.alert(error instanceof Error ? error.message : "图片发送失败");
     } finally {
@@ -231,31 +291,25 @@ export function ChatPanel({
         </div>
 
         <div ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-          {messages.length === 0 ? (
+          {messages.length === 0 && !aiThinking ? (
             <p className="py-8 text-center text-sm text-[#888]">还没有消息，打个招呼吧</p>
           ) : null}
 
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex items-start gap-2.5 ${message.isSelf ? "flex-row-reverse" : "flex-row"}`}
+              className={`flex items-start gap-2.5 ${
+                message.isSelf ? "flex-row-reverse" : "flex-row"
+              }`}
             >
-              <Avatar name={message.nickname} />
+              <Avatar name={message.nickname} type={message.type} />
 
               <div className={`flex max-w-[72%] flex-col ${message.isSelf ? "items-end" : "items-start"}`}>
                 {!message.isSelf ? (
                   <span className="mb-1 px-1 text-xs text-[#888]">{message.nickname}</span>
                 ) : null}
 
-                <div
-                  className={`relative break-words rounded-md shadow-sm ${
-                    message.type === "image"
-                      ? "overflow-hidden bg-white p-1"
-                      : message.isSelf
-                        ? "bg-[#95ec69] px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-right-1.5 after:border-y-[6px] after:border-l-[6px] after:border-y-transparent after:border-l-[#95ec69] after:content-['']"
-                        : "bg-white px-3 py-2 text-[15px] leading-relaxed text-[#111] after:absolute after:top-2 after:-left-1.5 after:border-y-[6px] after:border-r-[6px] after:border-y-transparent after:border-r-white after:content-['']"
-                  }`}
-                >
+                <div className={`relative break-words rounded-md shadow-sm ${bubbleClass(message)}`}>
                   {message.type === "image" && message.imageObjectPath ? (
                     <button
                       type="button"
@@ -271,7 +325,7 @@ export function ChatPanel({
                       />
                     </button>
                   ) : (
-                    message.message
+                    <span className="whitespace-pre-wrap">{message.message}</span>
                   )}
                   {message.type === "image" && message.message ? (
                     <p className="px-2 py-1 text-sm text-[#333]">{message.message}</p>
@@ -282,9 +336,25 @@ export function ChatPanel({
               </div>
             </div>
           ))}
+
+          {aiThinking ? (
+            <div className="flex items-start gap-2.5">
+              <Avatar name={AI_NICKNAME} type="ai" />
+              <div className="rounded-md bg-[#eef3ff] px-3 py-2 text-sm text-[#666]">
+                正在思考…
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        <div className="min-w-0 shrink-0 border-t border-[#d9d9d9] bg-[#f7f7f7] p-3">
+        <div className="relative min-w-0 shrink-0 border-t border-[#d9d9d9] bg-[#f7f7f7] p-3">
+          <EmojiPicker
+            open={emojiOpen}
+            onClose={() => setEmojiOpen(false)}
+            onInsert={insertEmoji}
+            onSend={(emoji) => sendText(emoji)}
+          />
+
           <div className="flex min-w-0 items-end gap-2">
             <input
               ref={fileInputRef}
@@ -296,14 +366,37 @@ export function ChatPanel({
             <button
               type="button"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#d9d9d9] bg-white text-xl leading-none text-[#555] hover:border-[#07c160] disabled:opacity-40"
-              disabled={uploading}
+              disabled={uploading || aiThinking}
               aria-label="发送图片"
               title="发送图片"
               onClick={() => fileInputRef.current?.click()}
             >
               +
             </button>
+            <button
+              type="button"
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md border bg-white text-xl leading-none hover:border-[#07c160] disabled:opacity-40 ${
+                emojiOpen ? "border-[#07c160] text-[#07c160]" : "border-[#d9d9d9] text-[#555]"
+              }`}
+              disabled={uploading || aiThinking}
+              aria-label="表情"
+              title="表情"
+              onClick={() => setEmojiOpen((open) => !open)}
+            >
+              😊
+            </button>
+            <button
+              type="button"
+              className="flex h-10 shrink-0 items-center justify-center rounded-md border border-[#576B95] bg-white px-2 text-xs font-medium text-[#576B95] hover:bg-[#eef3ff] disabled:opacity-40"
+              disabled={!draft.trim() || uploading || aiThinking}
+              aria-label="问 AI"
+              title="问 AI"
+              onClick={askAi}
+            >
+              AI
+            </button>
             <input
+              ref={inputRef}
               className="min-w-0 flex-1 rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-base text-[#111] outline-none focus:border-[#07c160]"
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
@@ -314,13 +407,15 @@ export function ChatPanel({
                   sendText();
                 }
               }}
-              placeholder={uploading ? "图片上传中…" : `Enter 发送，可粘贴截图`}
-              disabled={uploading}
+              placeholder={
+                uploading ? "图片上传中…" : aiThinking ? "AI 思考中…" : "Enter 发送，可问 AI 或粘贴截图"
+              }
+              disabled={uploading || aiThinking}
             />
             <button
               className="shrink-0 rounded-md bg-[#07c160] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-40"
-              disabled={!draft.trim() || uploading}
-              onClick={sendText}
+              disabled={!draft.trim() || uploading || aiThinking}
+              onClick={() => sendText()}
             >
               发送
             </button>
