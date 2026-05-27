@@ -14,3 +14,7 @@ export function createRoomId(): string {
 export function createChatMessageId(): string {
   return `msg_${makeId()}`;
 }
+
+export function createWatchLogId(): string {
+  return `wlog_${makeId()}`;
+}

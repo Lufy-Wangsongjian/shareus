@@ -91,3 +91,60 @@ export async function deleteVideo(token: string, videoId: string) {
   if (!response.ok) throw new Error("Failed to delete video");
   return response.json();
 }
+
+export interface AdminRoomSummary {
+  id: string;
+  videoId: string;
+  videoTitle: string;
+  status: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
+  playbackState: {
+    isPlaying: boolean;
+    positionSec: number;
+    updatedAt: string;
+    updatedBy: string;
+  } | null;
+  latestLog: {
+    message: string;
+    createdAt: string;
+    nickname?: string;
+  } | null;
+}
+
+export interface WatchLogRecord {
+  id: string;
+  roomId: string;
+  message: string;
+  nickname?: string;
+  createdAt: string;
+}
+
+export interface AdminRoomDetail extends Omit<AdminRoomSummary, "latestLog"> {
+  watchLogs: WatchLogRecord[];
+}
+
+export async function listAdminRooms(token: string): Promise<AdminRoomSummary[]> {
+  const response = await fetch(`${apiBaseUrl}/api/admin/rooms`, {
+    headers: { authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(await readApiError(response, "Failed to load rooms"));
+  return response.json();
+}
+
+export async function getAdminRoom(token: string, roomId: string): Promise<AdminRoomDetail> {
+  const response = await fetch(`${apiBaseUrl}/api/admin/rooms/${roomId}`, {
+    headers: { authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(await readApiError(response, "Failed to load room"));
+  return response.json();
+}
+
+export async function deleteAdminRoom(token: string, roomId: string): Promise<{ ok: boolean; roomId: string }> {
+  const response = await fetch(`${apiBaseUrl}/api/admin/rooms/${roomId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(await readApiError(response, "Failed to delete room"));
+  return response.json();
+}

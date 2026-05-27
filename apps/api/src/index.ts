@@ -21,7 +21,8 @@ attachRoomSocket(server.server, deps.roomRepo ? {
     });
   },
   saveChatMessage: firestore.saveChatMessage,
-  listChatMessages: firestore.listChatMessages
+  listChatMessages: firestore.listChatMessages,
+  saveWatchLog: firestore.saveWatchLog
 } : undefined);
 
 const port = Number(process.env.PORT ?? 8080);

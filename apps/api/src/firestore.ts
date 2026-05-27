@@ -1,6 +1,7 @@
 import { Firestore } from "@google-cloud/firestore";
 import type { ChatMessageRecord } from "./rooms/chat.model.js";
 import type { RoomRecord } from "./rooms/room.model.js";
+import type { WatchLogRecord } from "./rooms/watchLog.model.js";
 import type { VideoRecord } from "./videos/video.model.js";
 
 export function createFirestoreAdapter() {
@@ -46,6 +47,43 @@ export function createFirestoreAdapter() {
       return snap.docs
         .map((doc) => doc.data() as RoomRecord)
         .filter((room) => room.status === "open");
+    },
+    async listAllRooms(): Promise<RoomRecord[]> {
+      const snap = await db.collection("rooms").orderBy("createdAt", "desc").get();
+      return snap.docs.map((doc) => doc.data() as RoomRecord);
+    },
+    async deleteRoom(roomId: string): Promise<void> {
+      const roomRef = db.collection("rooms").doc(roomId);
+      const [messageDocs, watchLogDocs] = await Promise.all([
+        roomRef.collection("messages").listDocuments(),
+        roomRef.collection("watchLogs").listDocuments()
+      ]);
+
+      const batch = db.batch();
+      for (const doc of [...messageDocs, ...watchLogDocs]) {
+        batch.delete(doc);
+      }
+      batch.delete(roomRef);
+      await batch.commit();
+    },
+    async saveWatchLog(entry: WatchLogRecord): Promise<WatchLogRecord> {
+      await db
+        .collection("rooms")
+        .doc(entry.roomId)
+        .collection("watchLogs")
+        .doc(entry.id)
+        .set(entry);
+      return entry;
+    },
+    async listWatchLogs(roomId: string, limit = 200): Promise<WatchLogRecord[]> {
+      const snap = await db
+        .collection("rooms")
+        .doc(roomId)
+        .collection("watchLogs")
+        .orderBy("createdAt", "desc")
+        .limit(limit)
+        .get();
+      return snap.docs.map((doc) => doc.data() as WatchLogRecord);
     },
     async saveChatMessage(message: ChatMessageRecord): Promise<ChatMessageRecord> {
       await db

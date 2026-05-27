@@ -1,6 +1,7 @@
 import { createRoomId } from "@shareus/shared";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import type { RoomRecord } from "./room.model.js";
+import type { WatchLogRecord } from "./watchLog.model.js";
 
 export interface RoomRepository {
   getVideo: (videoId: string) => Promise<{ id: string; status: string; title?: string } | null>;
@@ -8,6 +9,10 @@ export interface RoomRepository {
   getRoom: (roomId: string) => Promise<RoomRecord | null>;
   updateRoom: (roomId: string, patch: Partial<RoomRecord>) => Promise<void>;
   listOpenRooms: () => Promise<RoomRecord[]>;
+  listAllRooms: () => Promise<RoomRecord[]>;
+  deleteRoom: (roomId: string) => Promise<void>;
+  saveWatchLog: (entry: WatchLogRecord) => Promise<WatchLogRecord>;
+  listWatchLogs: (roomId: string, limit?: number) => Promise<WatchLogRecord[]>;
 }
 
 export function createRoomService(repo: RoomRepository) {

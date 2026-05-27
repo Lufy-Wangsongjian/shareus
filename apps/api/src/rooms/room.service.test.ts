@@ -2,13 +2,21 @@ import { describe, expect, it } from "vitest";
 import { createRoomService } from "./room.service.js";
 
 describe("room service", () => {
+  const baseRepo = {
+    saveRoom: async (room: import("./room.model.js").RoomRecord) => room,
+    getRoom: async () => null,
+    updateRoom: async () => undefined,
+    listOpenRooms: async () => [],
+    listAllRooms: async () => [],
+    deleteRoom: async () => undefined,
+    saveWatchLog: async (entry: import("./watchLog.model.js").WatchLogRecord) => entry,
+    listWatchLogs: async () => []
+  };
+
   it("creates a room for a ready video", async () => {
     const service = createRoomService({
-      getVideo: async () => ({ id: "vid_1", status: "ready" }),
-      saveRoom: async (room) => room,
-      getRoom: async () => null,
-      updateRoom: async () => undefined,
-      listOpenRooms: async () => []
+      ...baseRepo,
+      getVideo: async () => ({ id: "vid_1", status: "ready" })
     });
 
     const room = await service.createRoom({ videoId: "vid_1", password: "room-secret" });
@@ -23,11 +31,8 @@ describe("room service", () => {
 
   it("rejects rooms for videos that are not ready", async () => {
     const service = createRoomService({
-      getVideo: async () => ({ id: "vid_1", status: "processing" }),
-      saveRoom: async (room) => room,
-      getRoom: async () => null,
-      updateRoom: async () => undefined,
-      listOpenRooms: async () => []
+      ...baseRepo,
+      getVideo: async () => ({ id: "vid_1", status: "processing" })
     });
 
     await expect(service.createRoom({ videoId: "vid_1", password: "room-secret" }))

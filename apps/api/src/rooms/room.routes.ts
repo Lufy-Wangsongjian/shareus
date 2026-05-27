@@ -1,11 +1,26 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppConfig } from "../config.js";
 import { verifyAdminToken } from "../auth/tokens.js";
 import { rewritePlaylistWithProxySegments } from "../gcs/playlist.js";
-import { createChatMessageId } from "@shareus/shared";
+import { createChatMessageId, createWatchLogId } from "@shareus/shared";
 import type { VideoRecord } from "../videos/video.model.js";
 import { createRoomService, type RoomRepository } from "./room.service.js";
+
+async function requireAdmin(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  config: AppConfig
+): Promise<boolean> {
+  const token = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
+  try {
+    await verifyAdminToken({ token, secret: config.adminTokenSecret });
+    return true;
+  } catch {
+    reply.code(401).send({ message: "Admin authorization is required" });
+    return false;
+  }
+}
 
 const createRoomSchema = z.object({
   videoId: z.string().min(1),
@@ -31,6 +46,7 @@ export interface RoomPlaybackGateway {
   getObjectSize?: (objectPath: string) => Promise<number>;
   openReadStream?: (objectPath: string, range?: { start: number; end?: number }) => NodeJS.ReadableStream;
   writeBuffer?: (objectPath: string, data: Buffer, contentType: string) => Promise<void>;
+  deletePrefix?: (prefix: string) => Promise<void>;
 }
 
 export async function registerRoomRoutes(
@@ -56,11 +72,8 @@ export async function registerRoomRoutes(
   });
 
   server.post("/api/rooms", async (request, reply) => {
-    const token = String(request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-    try {
-      await verifyAdminToken({ token, secret: config.adminTokenSecret });
-    } catch {
-      return reply.code(401).send({ message: "Admin authorization is required" });
+    if (!(await requireAdmin(request, reply, config))) {
+      return;
     }
 
     const parsed = createRoomSchema.safeParse(request.body);
@@ -69,7 +82,14 @@ export async function registerRoomRoutes(
     }
 
     try {
-      return await rooms.createRoom(parsed.data);
+      const room = await rooms.createRoom(parsed.data);
+      await repo.saveWatchLog({
+        id: createWatchLogId(),
+        roomId: room.id,
+        message: "房间已创建",
+        createdAt: new Date().toISOString()
+      });
+      return { id: room.id };
     } catch (error) {
       return reply.code(400).send({ message: error instanceof Error ? error.message : "Room creation failed" });
     }
@@ -87,6 +107,70 @@ export async function registerRoomRoutes(
     } catch (error) {
       return reply.code(401).send({ message: error instanceof Error ? error.message : "Join failed" });
     }
+  });
+
+  server.get("/api/admin/rooms", async (request, reply) => {
+    if (!(await requireAdmin(request, reply, config))) {
+      return;
+    }
+
+    const allRooms = await repo.listAllRooms();
+    return Promise.all(allRooms.map(async (room) => {
+      const video = await repo.getVideo(room.videoId);
+      const logs = await repo.listWatchLogs(room.id, 1);
+      return {
+        id: room.id,
+        videoId: room.videoId,
+        videoTitle: video?.title ?? "未知影片",
+        status: room.status,
+        createdAt: room.createdAt,
+        updatedAt: room.updatedAt,
+        playbackState: room.playbackState,
+        latestLog: logs[0] ?? null
+      };
+    }));
+  });
+
+  server.get<{ Params: { roomId: string } }>("/api/admin/rooms/:roomId", async (request, reply) => {
+    if (!(await requireAdmin(request, reply, config))) {
+      return;
+    }
+
+    const room = await repo.getRoom(request.params.roomId);
+    if (!room) {
+      return reply.code(404).send({ message: "Room not found" });
+    }
+
+    const video = await repo.getVideo(room.videoId);
+    const watchLogs = await repo.listWatchLogs(room.id, 200);
+    return {
+      id: room.id,
+      videoId: room.videoId,
+      videoTitle: video?.title ?? "未知影片",
+      status: room.status,
+      createdAt: room.createdAt,
+      updatedAt: room.updatedAt,
+      playbackState: room.playbackState,
+      watchLogs
+    };
+  });
+
+  server.delete<{ Params: { roomId: string } }>("/api/admin/rooms/:roomId", async (request, reply) => {
+    if (!(await requireAdmin(request, reply, config))) {
+      return;
+    }
+
+    const room = await repo.getRoom(request.params.roomId);
+    if (!room) {
+      return reply.code(404).send({ message: "Room not found" });
+    }
+
+    if (playback?.deletePrefix) {
+      await playback.deletePrefix(`chat-images/${room.id}/`);
+    }
+
+    await repo.deleteRoom(room.id);
+    return { ok: true, roomId: room.id };
   });
 
   if (playback) {

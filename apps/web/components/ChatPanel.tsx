@@ -295,12 +295,13 @@ export function ChatPanel({
             />
             <button
               type="button"
-              className="rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-sm text-[#555] hover:border-[#07c160] disabled:opacity-40"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[#d9d9d9] bg-white text-xl leading-none text-[#555] hover:border-[#07c160] disabled:opacity-40"
               disabled={uploading}
+              aria-label="发送图片"
               title="发送图片"
               onClick={() => fileInputRef.current?.click()}
             >
-              图片
+              +
             </button>
             <input
               className="min-w-0 flex-1 rounded-md border border-[#d9d9d9] bg-white px-3 py-2.5 text-sm text-[#111] outline-none focus:border-[#07c160]"

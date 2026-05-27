@@ -24,6 +24,18 @@ describe("room routes", () => {
           createdAt: "2026-05-24T12:00:00.000Z",
           updatedAt: "2026-05-24T12:00:00.000Z"
         }],
+        listAllRooms: async () => [{
+          id: "room_abc",
+          videoId: "vid_1",
+          passwordHash: "hash",
+          status: "open",
+          playbackState: null,
+          createdAt: "2026-05-24T12:00:00.000Z",
+          updatedAt: "2026-05-24T12:00:00.000Z"
+        }],
+        deleteRoom: async () => undefined,
+        saveWatchLog: async (entry) => entry,
+        listWatchLogs: async () => [],
         getVideo: async () => ({ id: "vid_1", status: "ready", title: "测试电影" }),
         saveRoom: async (room) => room,
         getRoom: async () => null,

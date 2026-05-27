@@ -1,8 +1,9 @@
 import type { Server as HttpServer } from "node:http";
-import { createChatMessageId, type PlaybackState } from "@shareus/shared";
+import { createChatMessageId, createWatchLogId, type PlaybackState } from "@shareus/shared";
 import { Server } from "socket.io";
 import { z } from "zod";
 import type { ChatMessageRecord } from "./chat.model.js";
+import type { WatchLogRecord } from "./watchLog.model.js";
 
 export const playbackSocketPayloadSchema = z.object({
   roomId: z.string().min(1),
@@ -42,6 +43,11 @@ const watchModeSchema = z.object({
   mode: z.enum(["sync", "free"])
 });
 
+const watchLogSchema = z.object({
+  roomId: z.string().min(1),
+  message: z.string().trim().min(1).max(500)
+});
+
 export type WatchMode = "sync" | "free";
 
 export interface PeerProgress {
@@ -62,6 +68,7 @@ export interface RoomSocketDeps {
   savePlaybackState: (roomId: string, playbackState: PlaybackState) => Promise<void>;
   saveChatMessage: (message: ChatMessageRecord) => Promise<ChatMessageRecord>;
   listChatMessages: (roomId: string, limit?: number) => Promise<ChatMessageRecord[]>;
+  saveWatchLog: (entry: WatchLogRecord) => Promise<WatchLogRecord>;
 }
 
 function nicknameOf(socket: { data: Record<string, unknown> }): string {
@@ -76,6 +83,30 @@ async function broadcastHost(io: Server, roomId: string, hostSocketId: string): 
     hostSocketId,
     hostNickname: host ? nicknameOf(host) : "主控"
   });
+}
+
+async function recordWatchLog(
+  deps: RoomSocketDeps | undefined,
+  input: { roomId: string; message: string; nickname?: string }
+): Promise<void> {
+  if (!deps) {
+    return;
+  }
+
+  await deps.saveWatchLog({
+    id: createWatchLogId(),
+    roomId: input.roomId,
+    message: input.message,
+    nickname: input.nickname,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function formatPlaybackTime(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
 export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps): Server {
@@ -134,7 +165,7 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
 
       socket.emit("room:watch-mode", {
         roomId: parsed.data.roomId,
-        mode: roomWatchModes.get(parsed.data.roomId) ?? "sync",
+        mode: roomWatchModes.get(parsed.data.roomId) ?? "free",
         changedBy: null
       });
 
@@ -147,6 +178,12 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
           peers
         });
       }
+
+      await recordWatchLog(deps, {
+        roomId: parsed.data.roomId,
+        nickname: parsed.data.nickname,
+        message: `${parsed.data.nickname} 加入了房间`
+      });
     });
 
     socket.on("room:watch-mode", (payload: unknown) => {
@@ -156,6 +193,13 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
       }
 
       roomWatchModes.set(parsed.data.roomId, parsed.data.mode);
+      const nickname = nicknameOf(socket);
+      const modeLabel = parsed.data.mode === "free" ? "各看各的" : "同步观影";
+      void recordWatchLog(deps, {
+        roomId: parsed.data.roomId,
+        nickname,
+        message: `${nickname} 切换为${modeLabel}`
+      });
       io.to(parsed.data.roomId).emit("room:watch-mode", {
         roomId: parsed.data.roomId,
         mode: parsed.data.mode,
@@ -206,6 +250,13 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         await deps.savePlaybackState(parsed.data.roomId, playbackState);
       }
 
+      const action = parsed.data.isPlaying ? "播放" : "暂停";
+      void recordWatchLog(deps, {
+        roomId: parsed.data.roomId,
+        nickname: parsed.data.updatedBy,
+        message: `${parsed.data.updatedBy} ${action} · ${formatPlaybackTime(parsed.data.positionSec)}`
+      });
+
       socket.to(parsed.data.roomId).emit("playback:remote-update", parsed.data);
     });
 
@@ -216,7 +267,7 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
       }
 
       const roomId = parsed.data.roomId;
-      const mode = roomWatchModes.get(roomId) ?? "sync";
+      const mode = roomWatchModes.get(roomId) ?? "free";
       if (mode === "free") {
         const existing = peerProgressMap(roomId).get(socket.id);
         if (existing) {
@@ -268,6 +319,23 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
       });
     });
 
+    socket.on("watch:log", async (payload: unknown) => {
+      const parsed = watchLogSchema.safeParse(payload);
+      if (!parsed.success) {
+        return;
+      }
+
+      if (!socket.rooms.has(parsed.data.roomId)) {
+        return;
+      }
+
+      await recordWatchLog(deps, {
+        roomId: parsed.data.roomId,
+        nickname: nicknameOf(socket),
+        message: parsed.data.message
+      });
+    });
+
     socket.on("disconnecting", async () => {
       for (const roomId of socket.rooms) {
         if (roomId === socket.id) {
@@ -284,6 +352,12 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
           });
         }
 
+        void recordWatchLog(deps, {
+          roomId,
+          nickname: nicknameOf(socket),
+          message: `${nicknameOf(socket)} 离开了房间`
+        });
+
         if (roomHosts.get(roomId) !== socket.id) {
           continue;
         }
@@ -298,6 +372,11 @@ export function attachRoomSocket(httpServer: HttpServer, deps?: RoomSocketDeps):
         roomHosts.set(roomId, next.id);
         next.data.isHost = true;
         await broadcastHost(io, roomId, next.id);
+        void recordWatchLog(deps, {
+          roomId,
+          nickname: nicknameOf(next),
+          message: `${nicknameOf(next)} 成为主控`
+        });
       }
     });
   });

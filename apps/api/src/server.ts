@@ -54,7 +54,11 @@ export function createProductionDeps(config: AppConfig): ServerDeps {
       saveRoom: firestore.saveRoom,
       getRoom: firestore.getRoom,
       updateRoom: firestore.updateRoom,
-      listOpenRooms: firestore.listOpenRooms
+      listOpenRooms: firestore.listOpenRooms,
+      listAllRooms: firestore.listAllRooms,
+      deleteRoom: firestore.deleteRoom,
+      saveWatchLog: firestore.saveWatchLog,
+      listWatchLogs: firestore.listWatchLogs
     },
     roomPlayback: {
       getVideo: firestore.getVideo,
@@ -62,7 +66,8 @@ export function createProductionDeps(config: AppConfig): ServerDeps {
       signReadUrl: storage.signReadUrl,
       getObjectSize: storage.getObjectSize,
       openReadStream: storage.openReadStream,
-      writeBuffer: storage.writeBuffer
+      writeBuffer: storage.writeBuffer,
+      deletePrefix: storage.deletePrefix
     },
     transcodeGateway: {
       startJob: createCloudRunJobStarter(config),
@@ -159,7 +164,14 @@ function createMemoryRoomRepository(videoRepo: VideoRepository): RoomRepository 
     },
     listOpenRooms: async () => [...rooms.values()]
       .filter((room) => room.status === "open")
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    listAllRooms: async () => [...rooms.values()]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    deleteRoom: async (roomId) => {
+      rooms.delete(roomId);
+    },
+    saveWatchLog: async (entry) => entry,
+    listWatchLogs: async () => []
   };
 }
 

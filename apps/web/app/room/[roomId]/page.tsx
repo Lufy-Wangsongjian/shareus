@@ -13,6 +13,7 @@ import { createSyncLogEntry, type SyncLogEntry } from "../../../lib/syncLog";
 import type { PeerProgressView, WatchMode } from "../../../lib/watchMode";
 
 const NICKNAME_KEY = "shareus:nickname";
+const DEFAULT_NICKNAME = "Alice";
 const ROOM_PASSWORD_KEY = "shareus:room-password";
 
 interface JoinRoomResponse {
@@ -22,7 +23,7 @@ interface JoinRoomResponse {
 }
 
 export default function RoomPage({ params }: { params: { roomId: string } }) {
-  const [nickname, setNickname] = useState("");
+  const [nickname, setNickname] = useState(DEFAULT_NICKNAME);
   const [password, setPassword] = useState("");
   const [joined, setJoined] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -32,7 +33,7 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
   const [syncEvents, setSyncEvents] = useState<SyncLogEntry[]>([]);
   const [hostNickname, setHostNickname] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
-  const [watchMode, setWatchMode] = useState<WatchMode>("sync");
+  const [watchMode, setWatchMode] = useState<WatchMode>("free");
   const [localProgress, setLocalProgress] = useState<PeerProgressView | null>(null);
   const [peerProgresses, setPeerProgresses] = useState<PeerProgressView[]>([]);
   const [roomPassword, setRoomPassword] = useState("");
@@ -44,12 +45,13 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
 
   const appendSyncEvent = useCallback((message: string) => {
     setSyncEvents((current) => [...current, createSyncLogEntry(message)].slice(-100));
-  }, []);
+    socket?.emit("watch:log", { roomId: params.roomId, message });
+  }, [socket, params.roomId]);
 
   useEffect(() => {
-    const saved = sessionStorage.getItem(NICKNAME_KEY);
-    if (saved) {
-      setNickname(saved);
+    const saved = localStorage.getItem(NICKNAME_KEY) ?? sessionStorage.getItem(NICKNAME_KEY);
+    if (saved?.trim()) {
+      setNickname(saved.trim());
     }
   }, []);
 
@@ -130,13 +132,13 @@ export default function RoomPage({ params }: { params: { roomId: string } }) {
     try {
       setJoinError(null);
       const room = await joinRoom(params.roomId, trimmedPassword) as JoinRoomResponse;
-      sessionStorage.setItem(NICKNAME_KEY, trimmedNickname);
+      localStorage.setItem(NICKNAME_KEY, trimmedNickname);
       sessionStorage.setItem(`${ROOM_PASSWORD_KEY}:${params.roomId}`, trimmedPassword);
       setRoomPassword(trimmedPassword);
       setVideoId(room.videoId);
       setInitialPlaybackState(room.playbackState);
       setSyncEvents([]);
-      setWatchMode("sync");
+      setWatchMode("free");
       setLocalProgress(null);
       setPeerProgresses([]);
       setChatCollapsed(false);
